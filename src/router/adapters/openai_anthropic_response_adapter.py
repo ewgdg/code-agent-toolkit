@@ -362,4 +362,3 @@ class OpenAIAnthropicResponseAdapter:
             except json.JSONDecodeError:
                 logger.warning("Failed to parse OpenAI stream data", data=data_str)
                 continue
-

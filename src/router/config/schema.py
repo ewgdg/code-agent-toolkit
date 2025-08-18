@@ -9,8 +9,6 @@ class RouterConfig(BaseModel):
     openai_base_url: str = Field(default="https://api.openai.com")
 
 
-
-
 class ReasoningThresholds(BaseModel):
     low_max: int = Field(
         default=5000,

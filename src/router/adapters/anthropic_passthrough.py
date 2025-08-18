@@ -37,7 +37,7 @@ class PassthroughAdapter:
 
         # Remove problematic headers that should not be forwarded
         # Only remove 'host' since we're forwarding to a different server
-        forwarded_headers.pop('host', None)
+        forwarded_headers.pop("host", None)
 
         # Sanitize sensitive headers for logging only
         safe_headers = self._sanitize_headers_for_logging(forwarded_headers)
@@ -48,7 +48,6 @@ class PassthroughAdapter:
             headers=list(safe_headers.keys()),
         )
 
-
         # Make the request
         response = await self.client.request(
             method=method,
@@ -57,7 +56,6 @@ class PassthroughAdapter:
             content=body,
             params=query_params,
         )
-
 
         return response
 
