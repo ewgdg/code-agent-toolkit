@@ -17,7 +17,6 @@ class TestConfig:
         assert config.router.original_base_url == "https://api.anthropic.com"
         assert config.router.openai_base_url == "https://api.openai.com"
 
-
         assert config.openai.reasoning_effort_default == "minimal"
         assert config.openai.reasoning_thresholds.low_max == 5000
         assert config.openai.reasoning_thresholds.medium_max == 15000
@@ -34,7 +33,9 @@ class TestConfig:
 
         # Test invalid threshold order
         with pytest.raises(ValidationError):
-            Config(openai={"reasoning_thresholds": {"low_max": 10000, "medium_max": 5000}})
+            Config(
+                openai={"reasoning_thresholds": {"low_max": 10000, "medium_max": 5000}}
+            )
 
     def test_config_loader_defaults(self):
         """Test config loader with non-existent file."""
@@ -51,14 +52,12 @@ class TestConfig:
         config_data = {
             "router": {
                 "listen": "127.0.0.1:9999",
-                "original_base_url": "https://custom.anthropic.com"
+                "original_base_url": "https://custom.anthropic.com",
             },
-            "openai": {
-                "reasoning_effort_default": "high"
-            }
+            "openai": {"reasoning_effort_default": "high"},
         }
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(config_data, f)
             config_path = Path(f.name)
 
@@ -75,7 +74,7 @@ class TestConfig:
 
     def test_invalid_yaml_fallback(self):
         """Test fallback to defaults with invalid YAML."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("invalid: yaml: content: [")
             config_path = Path(f.name)
 
