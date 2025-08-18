@@ -1,0 +1,52 @@
+# Claude Code Model Router Configuration
+# This configuration routes Claude Code CLI traffic to appropriate endpoints
+
+router:
+  listen: "0.0.0.0:8787"
+  original_base_url: "https://api.anthropic.com"
+  openai_base_url: "https://api.openai.com"
+
+# Mode detection for plan/planning workflows
+mode_detection:
+  header: "X-Claude-Code-Mode"
+  plan_values: ["plan", "planning"]
+
+# Model patterns that should be routed to OpenAI
+haiku_matchers: ["haiku", "claude-3-haiku"]
+
+# Model mapping for OpenAI routing
+mapping:
+  plan_model: "openai/gpt-5"         # For plan mode requests
+  background_model: "openai/gpt-5-mini"  # For haiku/background tasks
+
+# OpenAI configuration
+openai:
+  api_key_env: "OPENAI_API_KEY"
+  reasoning_effort_default: "minimal"  # Cost-efficient default
+  include_summary: true
+  reasoning_thresholds:
+    low_max: 2048      # 1-5K tokens: simple tasks (~20% of max_tokens)
+    medium_max: 8192  # 5K-15K tokens: balanced tasks (~50% of max_tokens)
+    # 15K+ tokens: high effort complex reasoning (up to 32K cap)
+
+# Timeout configuration
+timeouts_ms:
+  connect: 5000    # 5 seconds
+  read: 600000     # 10 minutes for long reasoning tasks
+
+# Logging configuration
+logging:
+  level: "info"
+
+# Optional override rules (commented examples)
+overrides: []
+  # Example: Route specific headers to different models
+  # - when:
+  #     header:
+  #       X-Task: "background"
+  #   model: "gpt-4o-mini"
+  # 
+  # - when:
+  #     header:
+  #       X-Priority: ["high", "urgent"]
+  #   model: "gpt-4o"
