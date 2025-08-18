@@ -11,11 +11,6 @@ class RouterConfig(BaseModel):
 
 
 
-class MappingConfig(BaseModel):
-    plan_model: str = Field(default="gpt-4o")
-    background_model: str = Field(default="gpt-4o-mini")
-
-
 class ReasoningThresholds(BaseModel):
     low_max: int = Field(
         default=5000,
@@ -84,7 +79,6 @@ class OverrideRule(BaseModel):
 
 class Config(BaseModel):
     router: RouterConfig = Field(default_factory=RouterConfig)
-    mapping: MappingConfig = Field(default_factory=MappingConfig)
     openai: OpenAIConfig = Field(default_factory=OpenAIConfig)
     timeouts_ms: TimeoutsConfig = Field(default_factory=TimeoutsConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)

@@ -34,7 +34,7 @@ class PassthroughAdapter:
 
         # Forward all headers for true passthrough transparency
         forwarded_headers = dict(headers)
-        
+
         # Remove problematic headers that should not be forwarded
         # Only remove 'host' since we're forwarding to a different server
         forwarded_headers.pop('host', None)
@@ -47,7 +47,7 @@ class PassthroughAdapter:
             url=url,
             headers=list(safe_headers.keys()),
         )
-        
+
 
         # Make the request
         response = await self.client.request(
@@ -57,7 +57,7 @@ class PassthroughAdapter:
             content=body,
             params=query_params,
         )
-        
+
 
         return response
 

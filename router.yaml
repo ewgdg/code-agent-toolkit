@@ -8,11 +8,6 @@ router:
 
 
 
-# Model mapping for OpenAI routing
-mapping:
-  plan_model: "openai/gpt-5"         # For plan mode requests
-  background_model: "openai/gpt-5-mini"  # For haiku/background tasks
-
 # OpenAI configuration
 openai:
   api_key_env: "OPENAI_API_KEY"
@@ -34,10 +29,18 @@ logging:
 
 # Override rules for routing decisions
 overrides:
+  # Route plan mode requests (ExitPlanMode tool calls) to plan model
+  - when:
+      request:
+        has_tool: "ExitPlanMode"
+    model: "openai/gpt-5"
+    
   # Route any model containing "haiku" to background model (most general first)
   - when:
       request:
         model_contains: "haiku"
+      request:
+        has_tool: "ExitPlanMode"
     model: "openai/gpt-5-mini"
     
   # Route any model containing "mini" to background model

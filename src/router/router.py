@@ -34,17 +34,6 @@ class ModelRouter:
         if override_decision:
             return override_decision
 
-        # Check for ExitPlanMode tool call (indicates plan mode)
-        if self.is_plan_mode(request_data):
-            provider, model = self._parse_provider_model(self.config.mapping.plan_model)
-            return RouterDecision(
-                target=provider,
-                model=model,
-                reasoning="Plan mode detected via ExitPlanMode tool call",
-            )
-
-
-
         # Default: passthrough to Anthropic
         return RouterDecision(
             target="anthropic",
@@ -94,7 +83,7 @@ class ModelRouter:
         if "request" in condition:
             request_conditions = condition["request"]
             for field_name, expected_value in request_conditions.items():
-                
+
                 # Handle special pattern matching
                 if field_name == "model_contains":
                     # Check if model contains the specified string
@@ -110,6 +99,10 @@ class ModelRouter:
                     actual_value = request_data.get(field_name, "")
                     if actual_value.lower() != expected_value.lower():
                         return False
+                elif field_name == "has_tool":
+                    # Check if request contains specific tool call
+                    if not self._has_tool_call(request_data, expected_value):
+                        return False
                 else:
                     # Standard equality check
                     actual_value = request_data.get(field_name, "")
@@ -118,11 +111,12 @@ class ModelRouter:
 
         return True
 
-    def is_plan_mode(self, request_data: dict[str, Any]) -> bool:
-        """
-        Detect if request contains ExitPlanMode tool call indicating plan mode.
 
-        Checks for ExitPlanMode in tool calls within message content.
+    def _has_tool_call(self, request_data: dict[str, Any], tool_name: str) -> bool:
+        """
+        Check if request contains a specific tool call.
+        
+        Searches through all messages for tool_use content with the specified name.
         """
         messages = request_data.get("messages", [])
 
@@ -133,9 +127,8 @@ class ModelRouter:
                     for item in content:
                         if (
                             item.get("type") == "tool_use"
-                            and item.get("name") == "ExitPlanMode"
+                            and item.get("name") == tool_name
                         ):
-                            logger.info("Plan mode detected via ExitPlanMode tool call")
                             return True
 
         return False

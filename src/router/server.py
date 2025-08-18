@@ -55,7 +55,7 @@ class ProxyRouter:
         # Configure logging level from config
         log_level = self.config.logging.level.upper()
         log_level_num = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}.get(log_level, 20)
-        
+
         # Reconfigure structlog with the config level
         structlog.configure(
             processors=[
@@ -86,7 +86,7 @@ class ProxyRouter:
 
     async def _handle_request(self, request: Request, path: str) -> Response:
         """Handle incoming request and route appropriately."""
-        
+
         # Get request details
         method = request.method
         headers = dict(request.headers)
@@ -375,12 +375,12 @@ def main():
 
     # Create app and get config
     app = create_app(args.config)
-    
+
     # Load config to get listen address
     from .config import ConfigLoader
     config_loader = ConfigLoader(args.config)
     config = config_loader.get_config()
-    
+
     # Parse listen address from config
     listen_parts = config.router.listen.split(":")
     host = listen_parts[0] if listen_parts[0] != "0.0.0.0" else args.host
