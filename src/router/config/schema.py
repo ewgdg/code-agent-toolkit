@@ -9,9 +9,6 @@ class RouterConfig(BaseModel):
     openai_base_url: str = Field(default="https://api.openai.com")
 
 
-class ModeDetectionConfig(BaseModel):
-    header: str = Field(default="X-Claude-Code-Mode")
-    plan_values: list[str] = Field(default=["plan", "planning"])
 
 
 class MappingConfig(BaseModel):
@@ -87,8 +84,6 @@ class OverrideRule(BaseModel):
 
 class Config(BaseModel):
     router: RouterConfig = Field(default_factory=RouterConfig)
-    mode_detection: ModeDetectionConfig = Field(default_factory=ModeDetectionConfig)
-    haiku_matchers: list[str] = Field(default=["haiku", "claude-3-haiku"])
     mapping: MappingConfig = Field(default_factory=MappingConfig)
     openai: OpenAIConfig = Field(default_factory=OpenAIConfig)
     timeouts_ms: TimeoutsConfig = Field(default_factory=TimeoutsConfig)
