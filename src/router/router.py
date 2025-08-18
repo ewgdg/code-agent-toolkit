@@ -36,33 +36,14 @@ class ModelRouter:
 
         # Check for ExitPlanMode tool call (indicates plan mode)
         if self.is_plan_mode(request_data):
+            provider, model = self._parse_provider_model(self.config.mapping.plan_model)
             return RouterDecision(
-                target="openai",
-                model=self.config.mapping.plan_model,
+                target=provider,
+                model=model,
                 reasoning="Plan mode detected via ExitPlanMode tool call",
             )
 
-        # Check for plan mode via header
-        mode_header = self.config.mode_detection.header
-        if mode_header in headers:
-            mode_value = headers[mode_header].lower()
-            if mode_value in self.config.mode_detection.plan_values:
-                return RouterDecision(
-                    target="openai",
-                    model=self.config.mapping.plan_model,
-                    reasoning=f"Plan mode detected via header {mode_header}={mode_value}"
-                )
 
-        # Check model name for haiku patterns
-        model_name = request_data.get("model", "").lower()
-        if model_name:
-            for matcher in self.config.haiku_matchers:
-                if matcher.lower() in model_name:
-                    return RouterDecision(
-                        target="openai",
-                        model=self.config.mapping.background_model,
-                        reasoning=f"Haiku model detected: {model_name} matches {matcher}"
-                    )
 
         # Default: passthrough to Anthropic
         return RouterDecision(
@@ -80,8 +61,7 @@ class ModelRouter:
 
         for override in self.config.overrides:
             if self._matches_override_condition(override.when, headers, request_data):
-                provider, model = override.model.split("/", 1)
-                # Determine target based on model
+                provider, model = self._parse_provider_model(override.model)
                 return RouterDecision(
                     target=provider,
                     model=model,
@@ -114,9 +94,27 @@ class ModelRouter:
         if "request" in condition:
             request_conditions = condition["request"]
             for field_name, expected_value in request_conditions.items():
-                actual_value = request_data.get(field_name)
-                if actual_value != expected_value:
-                    return False
+                
+                # Handle special pattern matching
+                if field_name == "model_contains":
+                    # Check if model contains the specified string
+                    actual_value = request_data.get("model", "")
+                    if isinstance(expected_value, str):
+                        if expected_value.lower() not in actual_value.lower():
+                            return False
+                    elif isinstance(expected_value, list):
+                        if not any(pattern.lower() in actual_value.lower() for pattern in expected_value):
+                            return False
+                elif field_name == "model":
+                    # Exact model match
+                    actual_value = request_data.get(field_name, "")
+                    if actual_value.lower() != expected_value.lower():
+                        return False
+                else:
+                    # Standard equality check
+                    actual_value = request_data.get(field_name, "")
+                    if actual_value != expected_value:
+                        return False
 
         return True
 
@@ -141,6 +139,22 @@ class ModelRouter:
                             return True
 
         return False
+
+    def _parse_provider_model(self, provider_model_string: str) -> tuple[str, str]:
+        """
+        Parse provider/model format and return (target, model).
+        
+        Examples:
+        - "openai/gpt-5" -> ("openai", "gpt-5")  
+        - "anthropic/claude-3-sonnet" -> ("anthropic", "claude-3-sonnet")
+        - "gpt-4" -> ("openai", "gpt-4")  # fallback to openai if no provider
+        """
+        if "/" in provider_model_string:
+            provider, model = provider_model_string.split("/", 1)
+            return provider.lower(), model
+        else:
+            # Fallback: assume OpenAI if no provider specified
+            return "openai", provider_model_string
 
     def get_reasoning_effort(self, request_data: dict[str, Any]) -> str:
         """
