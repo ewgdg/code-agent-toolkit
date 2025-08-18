@@ -1,11 +1,15 @@
 import os
 from pathlib import Path
+from types import TracebackType
+from typing import TYPE_CHECKING, Type, cast, Any
 
 import structlog
 import yaml
 from pydantic import ValidationError
-from watchdog.events import FileSystemEventHandler
+from watchdog.events import FileSystemEventHandler, FileSystemEvent
+
 from watchdog.observers import Observer
+from watchdog.observers.api import BaseObserver
 
 from .schema import Config
 
@@ -16,7 +20,7 @@ class ConfigReloadHandler(FileSystemEventHandler):
     def __init__(self, config_loader: "ConfigLoader"):
         self.config_loader = config_loader
 
-    def on_modified(self, event):
+    def on_modified(self, event: FileSystemEvent) -> None:
         if event.is_directory:
             return
         if event.src_path == str(self.config_loader.config_path):
@@ -25,12 +29,14 @@ class ConfigReloadHandler(FileSystemEventHandler):
 
 
 class ConfigLoader:
-    def __init__(self, config_path: Path | None = None, enable_hot_reload: bool = False):
+    def __init__(
+        self, config_path: Path | None = None, enable_hot_reload: bool = False
+    ):
         self.config_path = config_path or Path("router.yaml")
         self.enable_hot_reload = enable_hot_reload
         self._config: Config | None = None
         self._last_modified: float | None = None
-        self._observer: Observer | None = None
+        self._observer: BaseObserver | None = None
 
         self.load()
 
@@ -51,13 +57,17 @@ class ConfigLoader:
                 logger.info("Config loaded successfully", path=str(self.config_path))
             else:
                 self._config = Config()
-                logger.info("Config file not found, using defaults", path=str(self.config_path))
+                logger.info(
+                    "Config file not found, using defaults", path=str(self.config_path)
+                )
 
         except (yaml.YAMLError, ValidationError) as e:
             logger.error("Failed to load config, using defaults", error=str(e))
             self._config = Config()
         except Exception as e:
-            logger.error("Unexpected error loading config, using defaults", error=str(e))
+            logger.error(
+                "Unexpected error loading config, using defaults", error=str(e)
+            )
             self._config = Config()
 
         return self._config
@@ -87,9 +97,7 @@ class ConfigLoader:
         event_handler = ConfigReloadHandler(self)
         self._observer = Observer()
         self._observer.schedule(
-            event_handler,
-            str(self.config_path.parent),
-            recursive=False
+            event_handler, str(self.config_path.parent), recursive=False
         )
         self._observer.start()
         logger.info("Hot reload enabled for config file", path=str(self.config_path))
@@ -102,8 +110,13 @@ class ConfigLoader:
             self._observer = None
             logger.info("Hot reload stopped")
 
-    def __enter__(self):
+    def __enter__(self) -> "ConfigLoader":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         self.stop_hot_reload()

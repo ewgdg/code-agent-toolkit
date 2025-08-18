@@ -21,7 +21,7 @@ structlog.configure(
     processors=[
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.add_log_level,
-        structlog.dev.ConsoleRenderer()
+        structlog.dev.ConsoleRenderer(),
     ],
     wrapper_class=structlog.make_filtering_bound_logger(10),  # DEBUG level
     logger_factory=structlog.PrintLoggerFactory(),
@@ -46,7 +46,7 @@ class ProxyRouter:
         self.app = FastAPI(
             title="Claude Code Model Router",
             description="Proxy router for Claude Code CLI traffic with OpenAI translation",
-            version="1.0.0"
+            version="1.0.0",
         )
 
         # Add routes
@@ -54,14 +54,16 @@ class ProxyRouter:
 
         # Configure logging level from config
         log_level = self.config.logging.level.upper()
-        log_level_num = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}.get(log_level, 20)
+        log_level_num = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}.get(
+            log_level, 20
+        )
 
         # Reconfigure structlog with the config level
         structlog.configure(
             processors=[
                 structlog.processors.TimeStamper(fmt="iso"),
                 structlog.processors.add_log_level,
-                structlog.dev.ConsoleRenderer()
+                structlog.dev.ConsoleRenderer(),
             ],
             wrapper_class=structlog.make_filtering_bound_logger(log_level_num),
             logger_factory=structlog.PrintLoggerFactory(),
@@ -79,7 +81,7 @@ class ProxyRouter:
         # Main proxy endpoint - catch all routes
         @self.app.api_route(
             "/{path:path}",
-            methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
+            methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
         )
         async def proxy_request(request: Request, path: str):
             return await self._handle_request(request, path)
@@ -102,7 +104,7 @@ class ProxyRouter:
             method=method,
             path=path,
             request_id=request_id,
-            user_agent=headers.get("user-agent", "")
+            user_agent=headers.get("user-agent", ""),
         )
 
         try:
@@ -123,7 +125,7 @@ class ProxyRouter:
                 request_id=request_id,
                 target=decision.target,
                 model=decision.model,
-                reasoning=decision.reasoning
+                reasoning=decision.reasoning,
             )
 
             # Route request
@@ -141,7 +143,7 @@ class ProxyRouter:
                 "Request handling error",
                 request_id=request_id,
                 error=str(e),
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
             raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -150,7 +152,7 @@ class ProxyRouter:
         request_data: dict[str, Any],
         target_model: str,
         headers: dict[str, str],
-        request_id: str
+        request_id: str,
     ) -> Response:
         """Handle request routed to OpenAI."""
 
@@ -174,7 +176,7 @@ class ProxyRouter:
                 "OpenAI request error",
                 request_id=request_id,
                 error=str(e),
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
 
             # Map common errors to appropriate HTTP status codes
@@ -186,9 +188,7 @@ class ProxyRouter:
                 raise HTTPException(status_code=502, detail="Bad gateway")
 
     async def _handle_openai_streaming(
-        self,
-        response: httpx.Response,
-        request_id: str
+        self, response: httpx.Response, request_id: str
     ) -> StreamingResponse:
         """Handle streaming OpenAI response."""
 
@@ -197,11 +197,11 @@ class ProxyRouter:
                 "OpenAI API error",
                 request_id=request_id,
                 status_code=response.status_code,
-                response=response.text
+                response=response.text,
             )
             raise HTTPException(
                 status_code=response.status_code,
-                detail=f"OpenAI API error: {response.text}"
+                detail=f"OpenAI API error: {response.text}",
             )
 
         async def stream_generator():
@@ -217,13 +217,11 @@ class ProxyRouter:
         return StreamingResponse(
             stream_generator(),
             media_type="text/event-stream",
-            headers={"x-request-id": request_id}
+            headers={"x-request-id": request_id},
         )
 
     async def _handle_openai_non_streaming(
-        self,
-        response: httpx.Response,
-        request_id: str
+        self, response: httpx.Response, request_id: str
     ) -> Response:
         """Handle non-streaming OpenAI response."""
 
@@ -232,11 +230,11 @@ class ProxyRouter:
                 "OpenAI API error",
                 request_id=request_id,
                 status_code=response.status_code,
-                response=response.text
+                response=response.text,
             )
             raise HTTPException(
                 status_code=response.status_code,
-                detail=f"OpenAI API error: {response.text}"
+                detail=f"OpenAI API error: {response.text}",
             )
 
         # Translate response
@@ -246,7 +244,7 @@ class ProxyRouter:
         return Response(
             content=json.dumps(anthropic_response),
             media_type="application/json",
-            headers={"x-request-id": request_id}
+            headers={"x-request-id": request_id},
         )
 
     async def _handle_passthrough_request(
@@ -256,7 +254,7 @@ class ProxyRouter:
         headers: dict[str, str],
         body: bytes,
         query_params: dict[str, str],
-        request_id: str
+        request_id: str,
     ) -> Response:
         """Handle request passed through to Anthropic."""
 
@@ -267,18 +265,22 @@ class ProxyRouter:
             )
 
             # Get filtered response headers
-            response_headers = await self.passthrough_adapter.get_response_headers(response)
+            response_headers = await self.passthrough_adapter.get_response_headers(
+                response
+            )
             response_headers["x-request-id"] = request_id
 
             # Handle streaming vs non-streaming
             content_type = response.headers.get("content-type", "")
             if "text/event-stream" in content_type:
-                return await self._handle_passthrough_streaming(response, response_headers)
+                return await self._handle_passthrough_streaming(
+                    response, response_headers
+                )
             else:
                 return Response(
                     content=response.content,
                     status_code=response.status_code,
-                    headers=response_headers
+                    headers=response_headers,
                 )
 
         except Exception as e:
@@ -286,7 +288,7 @@ class ProxyRouter:
                 "Passthrough request error",
                 request_id=request_id,
                 error=str(e),
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
 
             if "timeout" in str(e).lower():
@@ -295,9 +297,7 @@ class ProxyRouter:
                 raise HTTPException(status_code=502, detail="Bad gateway")
 
     async def _handle_passthrough_streaming(
-        self,
-        response: httpx.Response,
-        response_headers: dict[str, str]
+        self, response: httpx.Response, response_headers: dict[str, str]
     ) -> StreamingResponse:
         """Handle streaming passthrough response."""
 
@@ -309,7 +309,7 @@ class ProxyRouter:
             stream_generator(),
             status_code=response.status_code,
             headers=response_headers,
-            media_type=response.headers.get("content-type", "text/event-stream")
+            media_type=response.headers.get("content-type", "text/event-stream"),
         )
 
     async def startup(self):
@@ -317,7 +317,7 @@ class ProxyRouter:
         logger.info(
             "Starting Claude Code Model Router",
             config_path=str(self.config_loader.config_path),
-            listen=self.config.router.listen
+            listen=self.config.router.listen,
         )
 
     async def shutdown(self):
@@ -357,18 +357,13 @@ def main():
         "--config",
         type=Path,
         default=Path(__file__).parent.parent.parent / "router.yaml",
-        help="Path to configuration file (default: router.yaml)"
+        help="Path to configuration file (default: router.yaml)",
     )
     parser.add_argument(
-        "--host",
-        default="0.0.0.0",
-        help="Host to bind to (default: 0.0.0.0)"
+        "--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)"
     )
     parser.add_argument(
-        "--port",
-        type=int,
-        default=8787,
-        help="Port to bind to (default: 8787)"
+        "--port", type=int, default=8787, help="Port to bind to (default: 8787)"
     )
 
     args = parser.parse_args()
@@ -378,6 +373,7 @@ def main():
 
     # Load config to get listen address
     from .config import ConfigLoader
+
     config_loader = ConfigLoader(args.config)
     config = config_loader.get_config()
 
@@ -387,12 +383,7 @@ def main():
     port = int(listen_parts[1]) if len(listen_parts) > 1 else args.port
 
     # Run server
-    uvicorn.run(
-        app,
-        host=host,
-        port=port,
-        log_level="info"
-    )
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":
