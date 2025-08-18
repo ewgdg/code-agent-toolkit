@@ -17,5 +17,5 @@ uv sync --dev
 ## Usage
 
 ```bash
-claude-router --config router.yaml
+uv run claude-router --config router.yaml
 ```
