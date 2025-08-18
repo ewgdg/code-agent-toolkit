@@ -91,7 +91,12 @@ dev = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "types-pyyaml" },
 ]
 
 [package.metadata]
@@ -114,7 +119,14 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "ruff", specifier = ">=0.12.9" }]
+dev = [
+    { name = "mypy", specifier = ">=1.17.1" },
+    { name = "pytest", specifier = ">=8.4.1" },
+    { name = "pytest-asyncio", specifier = ">=1.1.0" },
+    { name = "pytest-cov", specifier = ">=6.2.1" },
+    { name = "ruff", specifier = ">=0.12.9" },
+    { name = "types-pyyaml", specifier = ">=6.0.12.20250809" },
+]
 
 [[package]]
 name = "colorama"
