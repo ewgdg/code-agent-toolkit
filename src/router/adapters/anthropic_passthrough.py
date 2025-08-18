@@ -13,6 +13,7 @@ class PassthroughAdapter:
         self.config = config
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(
+                30.0,
                 connect=self.config.timeouts_ms.connect / 1000,
                 read=self.config.timeouts_ms.read / 1000,
             )
@@ -33,6 +34,10 @@ class PassthroughAdapter:
 
         # Forward all headers for true passthrough transparency
         forwarded_headers = dict(headers)
+        
+        # Remove problematic headers that should not be forwarded
+        # Only remove 'host' since we're forwarding to a different server
+        forwarded_headers.pop('host', None)
 
         # Sanitize sensitive headers for logging only
         safe_headers = self._sanitize_headers_for_logging(forwarded_headers)
@@ -42,6 +47,7 @@ class PassthroughAdapter:
             url=url,
             headers=list(safe_headers.keys()),
         )
+        
 
         # Make the request
         response = await self.client.request(
@@ -51,6 +57,7 @@ class PassthroughAdapter:
             content=body,
             params=query_params,
         )
+        
 
         return response
 
