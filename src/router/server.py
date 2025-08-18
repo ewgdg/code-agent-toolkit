@@ -20,9 +20,10 @@ from .router import ModelRouter
 structlog.configure(
     processors=[
         structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.add_log_level,
         structlog.dev.ConsoleRenderer()
     ],
-    wrapper_class=structlog.make_filtering_bound_logger(30),  # INFO level
+    wrapper_class=structlog.make_filtering_bound_logger(10),  # DEBUG level
     logger_factory=structlog.PrintLoggerFactory(),
     cache_logger_on_first_use=True,
 )
@@ -51,12 +52,20 @@ class ProxyRouter:
         # Add routes
         self._setup_routes()
 
-        # Configure logging level
+        # Configure logging level from config
         log_level = self.config.logging.level.upper()
+        log_level_num = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}.get(log_level, 20)
+        
+        # Reconfigure structlog with the config level
         structlog.configure(
-            wrapper_class=structlog.make_filtering_bound_logger(
-                getattr(structlog, log_level, 30)
-            )
+            processors=[
+                structlog.processors.TimeStamper(fmt="iso"),
+                structlog.processors.add_log_level,
+                structlog.dev.ConsoleRenderer()
+            ],
+            wrapper_class=structlog.make_filtering_bound_logger(log_level_num),
+            logger_factory=structlog.PrintLoggerFactory(),
+            cache_logger_on_first_use=True,
         )
 
     def _setup_routes(self):
@@ -77,7 +86,7 @@ class ProxyRouter:
 
     async def _handle_request(self, request: Request, path: str) -> Response:
         """Handle incoming request and route appropriately."""
-
+        
         # Get request details
         method = request.method
         headers = dict(request.headers)
@@ -364,14 +373,24 @@ def main():
 
     args = parser.parse_args()
 
-    # Create app
+    # Create app and get config
     app = create_app(args.config)
+    
+    # Load config to get listen address
+    from .config import ConfigLoader
+    config_loader = ConfigLoader(args.config)
+    config = config_loader.get_config()
+    
+    # Parse listen address from config
+    listen_parts = config.router.listen.split(":")
+    host = listen_parts[0] if listen_parts[0] != "0.0.0.0" else args.host
+    port = int(listen_parts[1]) if len(listen_parts) > 1 else args.port
 
     # Run server
     uvicorn.run(
         app,
-        host=args.host,
-        port=args.port,
+        host=host,
+        port=port,
         log_level="info"
     )
 
