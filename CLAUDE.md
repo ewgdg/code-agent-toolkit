@@ -47,8 +47,9 @@ uv run ruff check src/ tests/ --fix
 
 The router makes decisions based on:
 1. **Override rules** (highest precedence) - custom header/request conditions including:
-   - Tool call detection (`has_tool: "ExitPlanMode"` for plan mode)
-   - Model name patterns (`model_contains: "haiku"`)
+   - System prompt regex patterns (`system_regex: r"\bplan mode is (activated|triggered|on)\b"` for plan mode detection)
+   - Model name regex patterns (`model_regex: r"haiku|mini"` for model matching)
+   - Tool call detection (`has_tool: "ToolName"` for specific tool availability)
    - Header matching
    - Request data conditions
 2. **Default passthrough** - everything else goes to Anthropic
@@ -67,10 +68,15 @@ All routing behavior is controlled by `router.yaml`:
 #### Override Rule Conditions
 
 Override rules support various `when` conditions:
+- `request.system_regex: "regex_pattern"` - matches system prompts using regex patterns (case-insensitive)
+- `request.model_regex: "regex_pattern"` - matches model names using regex patterns (case-insensitive)
 - `request.has_tool: "ToolName"` - matches requests containing specific tool calls
-- `request.model_contains: "pattern"` - matches model names containing substring
-- `request.model: "exact-name"` - exact model name matching
 - `header.HeaderName: "value"` - HTTP header matching
+
+**Regex Examples:**
+- `system_regex: r"\bplan mode is (activated|triggered|on)\b"` - matches plan mode activation
+- `model_regex: r"^claude-3\.5-(sonnet|haiku)"` - matches Claude 3.5 models
+- `model_regex: "opus"` - matches any model containing "opus"
 
 ### Key Features
 
@@ -82,7 +88,7 @@ Override rules support various `when` conditions:
 
 ## Important Notes
 
-- Plan mode detection is configured via override rules using `has_tool: "ExitPlanMode"` 
+- Plan mode detection is configured via override rules using `system_regex: r"\bplan mode is (activated|triggered|on)\b"` to detect when Claude Code enters plan mode 
 - Haiku/mini model requests are routed to cost-efficient OpenAI models via override rules
 - All requests include request IDs for tracing and debugging
 - Configuration supports environment variable substitution for API keys
@@ -96,4 +102,7 @@ Override rules support various `when` conditions:
 - `src/router/config/` - Configuration loading, validation, and hot reload
 - `tests/` - Unit tests for routing logic and configuration
 
-The `ModelRouter.decide_route()` method is the main entry point that processes override rules and returns routing decisions. Override rule matching happens in `_matches_override_condition()` with support for various condition types including tool call detection via `_has_tool_call()`.
+The `ModelRouter.decide_route()` method is the main entry point that processes override rules and returns routing decisions. Override rule matching happens in `_matches_override_condition()` with support for various condition types including:
+- System prompt regex analysis via `_extract_system_content()`
+- Model regex matching with case-insensitive search and error handling
+- Tool detection via `_has_tool()`

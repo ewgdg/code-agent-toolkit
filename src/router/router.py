@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 import structlog
@@ -133,39 +134,31 @@ class ModelRouter:
 
             for field_name, expected_value in request_conditions.items():
                 # Handle special pattern matching
-                if field_name == "model_contains":
-                    # Check if model contains the specified string
+                if field_name == "model_regex":
+                    # Check if model matches the regex pattern
                     actual_value = request_data.get("model", "")
-                    logger.info(
-                        "Model contains check",
+                    logger.debug(
+                        "Model regex check",
                         expected_pattern=expected_value,
                         actual_model=actual_value,
                     )
 
-                    if isinstance(expected_value, str):
-                        if expected_value.lower() not in actual_value.lower():
-                            logger.info("Model contains condition failed")
-                            return False
-                    elif isinstance(expected_value, list):
-                        if not any(
-                            pattern.lower() in actual_value.lower()
-                            for pattern in expected_value
-                        ):
-                            logger.info("Model contains condition failed (list)")
-                            return False
-
-                elif field_name == "model":
-                    # Exact model match
-                    actual_value = request_data.get(field_name, "")
-                    logger.debug(
-                        "Model exact check",
-                        expected=expected_value,
-                        actual=actual_value,
-                    )
-
-                    if actual_value.lower() != expected_value.lower():
-                        logger.debug("Model exact condition failed")
+                    try:
+                        if isinstance(expected_value, str):
+                            if not re.search(expected_value, actual_value, re.IGNORECASE):
+                                logger.debug("Model regex condition failed")
+                                return False
+                        elif isinstance(expected_value, list):
+                            if not any(
+                                re.search(pattern, actual_value, re.IGNORECASE)
+                                for pattern in expected_value
+                            ):
+                                logger.debug("Model regex condition failed (list)")
+                                return False
+                    except re.error as e:
+                        logger.error("Invalid regex pattern", pattern=expected_value, error=str(e))
                         return False
+
 
                 elif field_name == "has_tool":
                     # Check if request contains specific tool
@@ -176,6 +169,37 @@ class ModelRouter:
 
                     if not has_tool:
                         logger.debug("Tool condition failed")
+                        return False
+
+                elif field_name == "system_regex":
+                    # Check if system prompt matches regex patterns
+                    system_parts = self._extract_system_content(request_data)
+                    logger.debug(
+                        "System regex check",
+                        expected_patterns=expected_value,
+                        system_parts_count=len(system_parts),
+                    )
+
+                    try:
+                        # Check patterns against all system content parts
+                        if isinstance(expected_value, str):
+                            pattern_found = any(
+                                re.search(expected_value, part, re.IGNORECASE)
+                                for part in system_parts
+                            )
+                            if not pattern_found:
+                                logger.debug("System regex condition failed")
+                                return False
+                        elif isinstance(expected_value, list):
+                            pattern_found = any(
+                                any(re.search(pattern, part, re.IGNORECASE) for part in system_parts)
+                                for pattern in expected_value
+                            )
+                            if not pattern_found:
+                                logger.debug("System regex condition failed (list)")
+                                return False
+                    except re.error as e:
+                        logger.error("Invalid regex pattern", pattern=expected_value, error=str(e))
                         return False
 
                 else:
@@ -271,3 +295,36 @@ class ModelRouter:
             return "medium"
         else:
             return "high"
+
+    def _extract_system_content(self, request_data: dict[str, Any]) -> list[str]:
+        """
+        Extract system prompt content from request data as a list of text parts.
+        
+        Handles both string and list formats:
+        - String: returns [string]
+        - List: extracts 'text' fields from Anthropic format objects
+        """
+        
+        system = request_data.get("system")
+        
+        if not system:
+            return []
+            
+        if isinstance(system, str):
+            return [system]
+            
+        if isinstance(system, list):
+            # Handle Anthropic system format: list of objects with 'text' field
+            text_parts = []
+            for item in system:
+                if isinstance(item, dict):
+                    text_content = item.get("text", "")
+                    if text_content:
+                        text_parts.append(text_content)
+                elif isinstance(item, str):
+                    # Handle mixed list formats
+                    text_parts.append(item)
+            return text_parts
+            
+        # Fallback: convert to string and return as list
+        return [str(system)]

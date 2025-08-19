@@ -28,25 +28,31 @@ logging:
 
 # Override rules for routing decisions
 overrides:
-  # Route plan mode requests (ExitPlanMode tool calls) to plan model
+  # Route plan mode requests (system prompt matches plan mode patterns) to reasoning model
   - when:
       request:
-        model_contains: "opus"
+        system_regex: "\b(?:plan mode is (?:activated|triggered|on)|in plan mode)\b"
+    model: "openai/gpt-5"
+    
+  # Route opus model requests to powerful OpenAI model
+  - when:
+      request:
+        model_regex: "opus"
     model: "openai/gpt-5"
     
   # Route any model containing "haiku" to background model (most general first)
   # - when:
   #     request:
-  #       model_contains: "haiku"
+  #       model_regex: "haiku"
   #   model: "openai/gpt-5-mini"
     
   # Route any model containing "mini" to background model
   - when:
       request:
-        model_contains: "mini"  
+        model_regex: "mini"  
     model: "openai/gpt-5-mini"
   
   - when:
       request:
-        model: "gpt"  
+        model_regex: "^gpt(?:-.*)?$"  
     model: "openai/gpt-5"

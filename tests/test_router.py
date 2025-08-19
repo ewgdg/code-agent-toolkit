@@ -9,33 +9,80 @@ class TestModelRouter:
         self.router = ModelRouter(self.config)
 
     def test_plan_mode_detection(self):
-        """Test routing decision for plan mode using override rules."""
+        """Test routing decision for plan mode using system prompt regex detection."""
         # Add override rule for plan mode
         self.config.overrides = [
             OverrideRule(
-                when={"request": {"has_tool": "ExitPlanMode"}}, model="openai/gpt-5"
+                when={"request": {"system_regex": r"plan mode is (activated|triggered|on)"}}, 
+                model="openai/gpt-4o-reasoning"
             )
         ]
 
         headers = {}
         request_data = {
             "model": "claude-3-sonnet",
-            "tools": [{"name": "ExitPlanMode", "description": "Exit plan mode"}],
-            "messages": [{"role": "user", "content": "Help me plan something"}],
+            "system": [
+                {"text": "You are Claude Code, an AI assistant."},
+                {"text": "Plan mode is activated. You should break down complex tasks into steps."},
+            ],
+            "messages": [{"role": "user", "content": "Help me implement a feature"}],
         }
 
         decision = self.router.decide_route(headers, request_data)
 
         assert decision.target == "openai"
-        assert decision.model == "gpt-5"
+        assert decision.model == "gpt-4o-reasoning"
         assert "override rule 1 matched" in decision.reason.lower()
+
+    def test_plan_mode_detection_string_system(self):
+        """Test plan mode detection with string format system prompt."""
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"system_regex": r"planning.*mode"}}, 
+                model="openai/gpt-4o-reasoning"
+            )
+        ]
+
+        headers = {}
+        request_data = {
+            "model": "claude-3-sonnet",
+            "system": "You are Claude Code. Planning mode is now active for this complex task.",
+            "messages": [{"role": "user", "content": "Build an app"}],
+        }
+
+        decision = self.router.decide_route(headers, request_data)
+
+        assert decision.target == "openai"
+        assert decision.model == "gpt-4o-reasoning"
+        
+    def test_plan_mode_not_detected(self):
+        """Test that normal requests without plan mode are not routed to reasoning model."""
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"system_regex": r"\bplan mode\b"}}, 
+                model="openai/gpt-4o-reasoning"
+            )
+        ]
+
+        headers = {}
+        request_data = {
+            "model": "claude-3-sonnet",
+            "system": [{"text": "You are Claude Code, an AI assistant."}],
+            "messages": [{"role": "user", "content": "What's the weather?"}],
+        }
+
+        decision = self.router.decide_route(headers, request_data)
+
+        # Should fallback to default (Anthropic passthrough)
+        assert decision.target == "anthropic"
+        assert decision.model == "passthrough"
 
     def test_haiku_model_detection(self):
         """Test routing decision for haiku models using override rules."""
         # Add override rule for haiku models
         self.config.overrides = [
             OverrideRule(
-                when={"request": {"model_contains": "haiku"}}, model="openai/gpt-5-mini"
+                when={"request": {"model_regex": "haiku"}}, model="openai/gpt-5-mini"
             )
         ]
 
@@ -139,7 +186,7 @@ class TestModelRouter:
             OverrideRule(
                 when={
                     "header": {"X-Environment": "production"},
-                    "request": {"model_contains": "claude"},
+                    "request": {"model_regex": "claude"},
                 },
                 model="openai/gpt-4o",
             )
@@ -169,12 +216,12 @@ class TestModelRouter:
         self.config.overrides = [
             # First rule (should win)
             OverrideRule(
-                when={"request": {"model_contains": "haiku"}},
+                when={"request": {"model_regex": "haiku"}},
                 model="openai/gpt-4o-mini",
             ),
             # Second rule (more specific but comes later)
             OverrideRule(
-                when={"request": {"model": "claude-3-haiku-20240307"}},
+                when={"request": {"model_regex": r"^claude-3-haiku-20240307$"}},
                 model="openai/gpt-5-mini",
             ),
         ]
@@ -189,10 +236,10 @@ class TestModelRouter:
         assert decision.model == "gpt-4o-mini"
 
     def test_override_rules_exact_model_match(self):
-        """Test exact model matching in override rules."""
+        """Test exact model matching in override rules using regex anchors."""
         self.config.overrides = [
             OverrideRule(
-                when={"request": {"model": "claude-3-opus-20240229"}},
+                when={"request": {"model_regex": r"^claude-3-opus-20240229$"}},
                 model="openai/gpt-5",
             )
         ]
@@ -214,11 +261,11 @@ class TestModelRouter:
         assert decision.target == "anthropic"
         assert decision.model == "passthrough"
 
-    def test_override_rules_model_contains_list(self):
-        """Test model_contains with list of patterns."""
+    def test_override_rules_model_regex_list(self):
+        """Test model_regex with list of patterns."""
         self.config.overrides = [
             OverrideRule(
-                when={"request": {"model_contains": ["haiku", "mini"]}},
+                when={"request": {"model_regex": ["haiku", "mini"]}},
                 model="openai/gpt-4o-mini",
             )
         ]
@@ -365,5 +412,23 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
+        assert decision.target == "anthropic"
+        assert decision.model == "passthrough"
+
+    def test_invalid_regex_patterns(self):
+        """Test behavior with invalid regex patterns."""
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"model_regex": "[invalid(regex"}},
+                model="openai/gpt-4o"
+            )
+        ]
+
+        headers = {}
+        request_data = {"model": "claude-3-sonnet"}
+
+        decision = self.router.decide_route(headers, request_data)
+
+        # Should fallback to default when regex is invalid
         assert decision.target == "anthropic"
         assert decision.model == "passthrough"
