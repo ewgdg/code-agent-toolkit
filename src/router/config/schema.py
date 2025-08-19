@@ -1,3 +1,5 @@
+import re
+from re import Pattern
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -81,6 +83,15 @@ class LoggingConfig(BaseModel):
 class OverrideRule(BaseModel):
     when: dict[str, Any] = Field(description="Conditions for this rule")
     model: str = Field(description="Model to use when conditions match")
+    compiled_patterns: dict[str, Pattern[str]] = Field(
+        default_factory=dict, exclude=True
+    )
+
+    def get_compiled_pattern(self, pattern: str) -> Pattern[str]:
+        """Get or compile regex pattern."""
+        if pattern not in self.compiled_patterns:
+            self.compiled_patterns[pattern] = re.compile(pattern, re.IGNORECASE)
+        return self.compiled_patterns[pattern]
 
 
 class Config(BaseModel):

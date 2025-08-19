@@ -82,7 +82,7 @@ class ModelRouter:
                 target_model=override.model,
             )
 
-            if self._matches_override_condition(override.when, headers, request_data):
+            if self._matches_override_condition(override, headers, request_data):
                 provider, model, model_config = self._parse_provider_model(
                     override.model
                 )
@@ -106,12 +106,13 @@ class ModelRouter:
 
     def _matches_override_condition(
         self,
-        condition: dict[str, Any],
+        override_rule,
         headers: dict[str, str],
         request_data: dict[str, Any],
     ) -> bool:
         """Check if override condition matches current request."""
 
+        condition = override_rule.when
         logger.debug("Checking condition", condition=condition)
 
         # Check header conditions
@@ -157,26 +158,25 @@ class ModelRouter:
                         actual_model=actual_value,
                     )
 
-                    try:
-                        if isinstance(expected_value, str):
-                            match = re.search(
-                                expected_value, actual_value, re.IGNORECASE
+                    if isinstance(expected_value, str):
+                        try:
+                            compiled_pattern = override_rule.get_compiled_pattern(
+                                expected_value
                             )
-                            if not match:
+                            if not compiled_pattern.search(actual_value):
                                 logger.debug("Model regex condition failed")
                                 return False
-                        elif isinstance(expected_value, list):
-                            if not any(
-                                re.search(pattern, actual_value, re.IGNORECASE)
-                                for pattern in expected_value
-                            ):
-                                logger.debug("Model regex condition failed (list)")
-                                return False
-                    except re.error as e:
+                        except re.error as e:
+                            logger.error(
+                                "Invalid regex pattern",
+                                pattern=expected_value,
+                                error=str(e),
+                            )
+                            return False
+                    else:
                         logger.error(
-                            "Invalid regex pattern",
-                            pattern=expected_value,
-                            error=str(e),
+                            "model_regex must be a string, got",
+                            type=type(expected_value),
                         )
                         return False
 
@@ -198,35 +198,17 @@ class ModelRouter:
                         "System regex check",
                         expected_patterns=expected_value,
                         system_parts_count=len(system_parts),
+                        system_parts=(part[:100] + "..." for part in system_parts),
                     )
 
-                    try:
-                        # Check patterns against all system content parts
-                        if isinstance(expected_value, str):
-                            pattern_found = any(
-                                re.search(expected_value, part, re.IGNORECASE)
-                                for part in system_parts
-                            )
-                            if not pattern_found:
-                                logger.debug("System regex condition failed")
-                                return False
-                        elif isinstance(expected_value, list):
-                            pattern_found = any(
-                                any(
-                                    re.search(pattern, part, re.IGNORECASE)
-                                    for part in system_parts
-                                )
-                                for pattern in expected_value
-                            )
-                            if not pattern_found:
-                                logger.debug("System regex condition failed (list)")
-                                return False
-                    except re.error as e:
-                        logger.error(
-                            "Invalid regex pattern",
-                            pattern=expected_value,
-                            error=str(e),
-                        )
+                    compiled_pattern = override_rule.get_compiled_pattern(
+                        expected_value
+                    )
+                    pattern_found = any(
+                        compiled_pattern.search(part) for part in system_parts
+                    )
+                    if not pattern_found:
+                        logger.debug("System regex condition failed")
                         return False
 
                 else:

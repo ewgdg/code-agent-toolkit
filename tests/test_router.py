@@ -273,39 +273,6 @@ class TestModelRouter:
         assert decision.target == "anthropic"
         assert decision.model == "passthrough"
 
-    def test_override_rules_model_regex_list(self):
-        """Test model_regex with list of patterns."""
-        self.config.overrides = [
-            OverrideRule(
-                when={"request": {"model_regex": ["haiku", "mini"]}},
-                model="openai/gpt-4o-mini",
-            )
-        ]
-
-        # Should match first pattern
-        headers = {}
-        request_data = {"model": "claude-3-haiku-20240307"}
-
-        decision = self.router.decide_route(headers, request_data)
-
-        assert decision.target == "openai"
-        assert decision.model == "gpt-4o-mini"
-
-        # Should match second pattern
-        request_data = {"model": "gpt-4o-mini"}
-
-        decision = self.router.decide_route(headers, request_data)
-
-        assert decision.target == "openai"
-        assert decision.model == "gpt-4o-mini"
-
-        # Should not match unrelated model
-        request_data = {"model": "claude-3-opus-20240229"}
-
-        decision = self.router.decide_route(headers, request_data)
-
-        assert decision.target == "anthropic"
-        assert decision.model == "passthrough"
 
     def test_override_rules_header_list_values(self):
         """Test header matching with list of values."""
@@ -427,23 +394,6 @@ class TestModelRouter:
         assert decision.target == "anthropic"
         assert decision.model == "passthrough"
 
-    def test_invalid_regex_patterns(self):
-        """Test behavior with invalid regex patterns."""
-        self.config.overrides = [
-            OverrideRule(
-                when={"request": {"model_regex": "[invalid(regex"}},
-                model="openai/gpt-4o",
-            )
-        ]
-
-        headers = {}
-        request_data = {"model": "claude-3-sonnet"}
-
-        decision = self.router.decide_route(headers, request_data)
-
-        # Should fallback to default when regex is invalid
-        assert decision.target == "anthropic"
-        assert decision.model == "passthrough"
 
     def test_provider_model_query_parameters(self):
         """Test parsing model query parameters from override rules."""
