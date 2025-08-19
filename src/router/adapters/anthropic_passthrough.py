@@ -87,6 +87,6 @@ class PassthroughAdapter:
         """Get all response headers for true passthrough transparency."""
         return dict(response.headers)
 
-    async def close(self):
+    async def close(self) -> None:
         """Close HTTP client."""
         await self.client.aclose()

@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class RouterConfig(BaseModel):
@@ -19,15 +19,18 @@ class ReasoningThresholds(BaseModel):
         description="Max tokens for medium effort reasoning (5K-15K: balanced tasks)",
     )
 
-    @validator("low_max", "medium_max")
+    @field_validator("low_max", "medium_max")
+    @classmethod
     def validate_positive(cls, v: int) -> int:
         if v <= 0:
             raise ValueError("Reasoning thresholds must be positive")
         return v
 
-    @validator("medium_max")
-    def validate_medium_greater_than_low(cls, v: int, values: dict[str, Any]) -> int:
-        if "low_max" in values and v <= values["low_max"]:
+    @field_validator("medium_max")
+    @classmethod
+    def validate_medium_greater_than_low(cls, v: int, info: Any) -> int:
+        if (hasattr(info, 'data') and "low_max" in info.data
+            and v <= info.data["low_max"]):
             raise ValueError("medium_max must be greater than low_max")
         return v
 
@@ -39,7 +42,8 @@ class OpenAIConfig(BaseModel):
         default_factory=ReasoningThresholds
     )
 
-    @validator("reasoning_effort_default")
+    @field_validator("reasoning_effort_default")
+    @classmethod
     def validate_reasoning_effort(cls, v: str) -> str:
         if v not in ["minimal", "low", "medium", "high"]:
             raise ValueError(
@@ -52,7 +56,8 @@ class TimeoutsConfig(BaseModel):
     connect: int = Field(default=5000, description="Connect timeout in milliseconds")
     read: int = Field(default=600000, description="Read timeout in milliseconds")
 
-    @validator("connect", "read")
+    @field_validator("connect", "read")
+    @classmethod
     def validate_timeout(cls, v: int) -> int:
         if v <= 0:
             raise ValueError("Timeout must be positive")
@@ -62,7 +67,8 @@ class TimeoutsConfig(BaseModel):
 class LoggingConfig(BaseModel):
     level: str = Field(default="info")
 
-    @validator("level")
+    @field_validator("level")
+    @classmethod
     def validate_log_level(cls, v: str) -> str:
         if v.lower() not in ["debug", "info", "warning", "error", "critical"]:
             raise ValueError("Invalid log level")
@@ -81,5 +87,4 @@ class Config(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     overrides: list[OverrideRule] = Field(default_factory=list)
 
-    class Config:
-        extra = "forbid"  # Prevent unknown fields
+    model_config = ConfigDict(extra="forbid")  # Prevent unknown fields

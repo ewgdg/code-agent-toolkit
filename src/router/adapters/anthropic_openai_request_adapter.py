@@ -83,7 +83,7 @@ class AnthropicOpenAIRequestAdapter:
     def _convert_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Convert Anthropic messages format to OpenAI input format."""
 
-        def _role_to_content_type(role: str, block_type) -> str:
+        def _role_to_content_type(role: str, block_type: str) -> str:
             role_l = (role or "").lower()
             if role_l in ("user", "system"):
                 return f"input_{block_type}"
@@ -104,14 +104,14 @@ class AnthropicOpenAIRequestAdapter:
 
             current_msg = None
 
-            def flush_message(curr_msg: dict[str, Any] | None):
-                """Append current message if it has any content; no external checks needed."""
+            def flush_message(curr_msg: dict[str, Any] | None) -> None:
+                """Append current message if it has any content."""
                 if curr_msg and curr_msg.get("content"):
                     converted.append(curr_msg)
 
             def append_content_to_msg(
                 curr_msg: dict[str, Any] | None, content: dict[str, Any] | str
-            ):
+            ) -> dict[str, Any]:
                 if curr_msg is None:
                     curr_msg = {"role": role, "content": [], "type": "message"}
                 curr_msg["content"].append(content)
@@ -132,7 +132,7 @@ class AnthropicOpenAIRequestAdapter:
                             )
 
                         elif block_type == "tool_use":
-                            # Start a new message for the tool call, but first flush any accumulated content
+                            # Start new message for tool call, flush accumulated content
                             flush_message(current_msg)
                             current_msg = None
 
@@ -157,7 +157,7 @@ class AnthropicOpenAIRequestAdapter:
                             converted.append(tool_msg)
 
                         elif block_type == "tool_result":
-                            # Start a new message for the tool result, but first flush any accumulated content
+                            # Start new message for tool result, flush content
                             flush_message(current_msg)
                             current_msg = None
 
@@ -353,6 +353,6 @@ class AnthropicOpenAIRequestAdapter:
         # Get from environment
         return os.getenv(self.config.openai.api_key_env)
 
-    async def close(self):
+    async def close(self) -> None:
         """Close HTTP client."""
         await self.client.aclose()

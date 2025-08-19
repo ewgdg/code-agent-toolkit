@@ -2,11 +2,11 @@ import json
 
 import pytest
 
-from src.router.config import Config
-from src.router.router import ModelRouter
 from src.router.adapters.anthropic_openai_request_adapter import (
     AnthropicOpenAIRequestAdapter,
 )
+from src.router.config import Config
+from src.router.router import ModelRouter
 
 
 class TestMessageConversion:
@@ -32,18 +32,14 @@ class TestMessageConversion:
 
         converted = self.adapter._convert_messages(messages)
         assert isinstance(converted, list) and len(converted) == 1
-        msg = converted[0]
 
-        # Role should be forced to assistant for tool_use
-        assert msg["role"] == "assistant"
-        assert isinstance(msg["content"], list) and len(msg["content"]) == 1
-
-        item = msg["content"][0]
+        # The adapter directly appends tool messages, not wrapped in role/content
+        item = converted[0]
         assert item["type"] == "function_call"
         assert item["name"] == "Search"
         # arguments should be a JSON string
         args = item["arguments"]
-        assert isinstance(args, (str, dict))
+        assert isinstance(args, str | dict)
         if isinstance(args, str):
             parsed = json.loads(args)
             assert parsed == {"query": "hello world"}
@@ -69,13 +65,9 @@ class TestMessageConversion:
 
         converted = self.adapter._convert_messages(messages)
         assert len(converted) == 1
-        msg = converted[0]
 
-        # Role should be set to user for tool_result
-        assert msg["role"] == "user"
-        assert len(msg["content"]) == 1
-
-        item = msg["content"][0]
+        # The adapter directly appends tool result messages, not wrapped in role/content
+        item = converted[0]
         assert item["type"] == "function_call_output"
         assert item["call_id"] == "call_abc"
         # output should be a string (JSON-serialized)
@@ -110,38 +102,35 @@ class TestMessageConversion:
         ]
 
         converted = self.adapter._convert_messages(messages)
-        # With the new policy, tool_use/tool_result each start a new message unless the current one is empty.
-        # Thus we expect 4 messages: assistant text, assistant function_call, user text, user function_call_output.
+        # With the new policy, tool_use/tool_result each start a new message unless
+        # the current one is empty. Thus we expect 4 items: assistant text message,
+        # function_call, user text message, function_call_output.
         assert len(converted) == 4
 
-        # First message: assistant text only
+        # First item: assistant text message
         m0 = converted[0]
         assert m0["role"] == "assistant"
         assert len(m0["content"]) == 1
         assert m0["content"][0]["type"] == "output_text"
         assert m0["content"][0]["text"] == "I will search now."
 
-        # Second message: assistant function_call only
+        # Second item: function_call (direct, not wrapped in message)
         m1 = converted[1]
-        assert m1["role"] == "assistant"
-        assert len(m1["content"]) == 1
-        assert m1["content"][0]["type"] == "function_call"
-        assert m1["content"][0]["name"] == "Search"
+        assert m1["type"] == "function_call"
+        assert m1["name"] == "Search"
 
-        # Third message: user text only
+        # Third item: user text message
         m2 = converted[2]
         assert m2["role"] == "user"
         assert len(m2["content"]) == 1
         assert m2["content"][0]["type"] == "input_text"
         assert m2["content"][0]["text"] == "Here is the tool output:"
 
-        # Fourth message: user function_call_output only
+        # Fourth item: function_call_output (direct, not wrapped in message)
         m3 = converted[3]
-        assert m3["role"] == "user"
-        assert len(m3["content"]) == 1
-        assert m3["content"][0]["type"] == "function_call_output"
-        assert m3["content"][0]["call_id"] == "call_tool"
-        assert m3["content"][0]["output"] == "Done"
+        assert m3["type"] == "function_call_output"
+        assert m3["call_id"] == "call_tool"
+        assert m3["output"] == "Done"
 
 
 @pytest.mark.asyncio
@@ -179,5 +168,6 @@ async def test_adapt_request_integration_includes_function_items():
     assert "input" in openai_request
     items = openai_request["input"]
     # Ensure function_call and function_call_output are present
-    assert any(i for i in items[0]["content"] if i["type"] == "function_call")
-    assert any(i for i in items[1]["content"] if i["type"] == "function_call_output")
+    # Items are direct tool calls/outputs, not wrapped in messages
+    assert any(i.get("type") == "function_call" for i in items)
+    assert any(i.get("type") == "function_call_output" for i in items)

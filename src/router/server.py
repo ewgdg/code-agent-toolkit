@@ -1,4 +1,5 @@
 import json
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +46,7 @@ class ProxyRouter:
         # Setup FastAPI app
         self.app = FastAPI(
             title="Claude Code Model Router",
-            description="Proxy router for Claude Code CLI traffic with OpenAI translation",
+            description="Proxy router for Claude Code CLI traffic with OpenAI",
             version="1.0.0",
         )
 
@@ -70,12 +71,12 @@ class ProxyRouter:
             cache_logger_on_first_use=True,
         )
 
-    def _setup_routes(self):
+    def _setup_routes(self) -> None:
         """Setup FastAPI routes."""
 
         # Health check endpoint
         @self.app.get("/health")
-        async def health_check():
+        async def health_check() -> dict[str, str]:
             return {"status": "healthy", "version": "1.0.0"}
 
         # Main proxy endpoint - catch all routes
@@ -83,7 +84,7 @@ class ProxyRouter:
             "/{path:path}",
             methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
         )
-        async def proxy_request(request: Request, path: str):
+        async def proxy_request(request: Request, path: str) -> Response:
             return await self._handle_request(request, path)
 
     async def _handle_request(self, request: Request, path: str) -> Response:
@@ -204,7 +205,7 @@ class ProxyRouter:
                 detail=f"OpenAI API error: {response.text}",
             )
 
-        async def stream_generator():
+        async def stream_generator() -> AsyncGenerator[str, None]:
             try:
                 async for anthropic_line in self.response_adapter.adapt_stream(
                     response.aiter_lines()
@@ -301,7 +302,7 @@ class ProxyRouter:
     ) -> StreamingResponse:
         """Handle streaming passthrough response."""
 
-        async def stream_generator():
+        async def stream_generator() -> AsyncGenerator[bytes, None]:
             async for chunk in self.passthrough_adapter.stream_response(response):
                 yield chunk
 
@@ -312,7 +313,7 @@ class ProxyRouter:
             media_type=response.headers.get("content-type", "text/event-stream"),
         )
 
-    async def startup(self):
+    async def startup(self) -> None:
         """Startup tasks."""
         logger.info(
             "Starting Claude Code Model Router",
@@ -320,7 +321,7 @@ class ProxyRouter:
             listen=self.config.router.listen,
         )
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Cleanup tasks."""
         logger.info("Shutting down Claude Code Model Router")
 
@@ -338,19 +339,20 @@ def create_app(config_path: Path) -> FastAPI:
 
     # Add lifecycle events
     @proxy.app.on_event("startup")
-    async def startup():
+    async def startup() -> None:
         await proxy.startup()
 
     @proxy.app.on_event("shutdown")
-    async def shutdown():
+    async def shutdown() -> None:
         await proxy.shutdown()
 
     return proxy.app
 
 
-def main():
+def main() -> None:
     """Main entry point."""
     import argparse
+
     from dotenv import load_dotenv
 
     # Load environment variables from .env file (in project root)
