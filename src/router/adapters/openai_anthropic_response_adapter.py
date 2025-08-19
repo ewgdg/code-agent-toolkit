@@ -13,116 +13,123 @@ class OpenAIAnthropicResponseAdapter:
     def __init__(self, config: Config):
         self.config = config
 
-    async def adapt_response(
-        self, openai_response: list[dict[str, Any]]
-    ) -> dict[str, Any]:
-        """Translate OpenAI response to Anthropic format."""
+    async def adapt_response(self, openai_response: dict[str, Any]) -> dict[str, Any]:
+        """Translate OpenAI Responses API response to Anthropic format."""
 
-        # Find the message item
-        message_item = None
-        reasoning_item = None
+        # OpenAI Responses API format: response has an 'output' array with items
+        output_items = openai_response.get("output", [])
 
-        for item in openai_response:
-            if item.get("type") == "message":
-                message_item = item
-            elif item.get("type") == "reasoning":
-                reasoning_item = item
-
-        if not message_item:
-            raise ValueError("No message found in OpenAI response")
-
-        # Build anthropic response from message item
+        # Build base anthropic response
         anthropic_response = {
-            "id": message_item.get("id", ""),
+            "id": openai_response.get("id", ""),
             "type": "message",
             "role": "assistant",
-            "model": message_item.get("model", ""),
+            "model": openai_response.get("model", ""),
             "content": [],
-            "stop_reason": self._map_stop_reason(message_item.get("status")),
-            "usage": self._map_usage(message_item.get("usage", {})),
+            "stop_reason": "end_turn",
+            "usage": self._map_usage(openai_response.get("usage", {})),
         }
 
-        # Add annotations (web search results) if present
-        annotations = message_item.get("annotations", [])
-        if annotations:
-            annotation_id = f"srvtoolu_{message_item.get('id', 'unknown')}"
-            # Add server tool use for web search
-            anthropic_response["content"].append(
-                {
-                    "type": "server_tool_use",
-                    "id": annotation_id,
-                    "name": "web_search",
-                    "input": {"query": ""},
-                }
-            )
-            # Add web search results
-            search_results = []
-            for annotation in annotations:
-                url_citation = annotation.get("url_citation", {})
-                if url_citation:
-                    search_results.append(
-                        {
-                            "type": "web_search_result",
-                            "url": url_citation.get("url", ""),
-                            "title": url_citation.get("title", ""),
-                        }
-                    )
+        # Process each output item
+        for item in output_items:
+            if not isinstance(item, dict):
+                continue
 
-            if search_results:
-                anthropic_response["content"].append(
-                    {
-                        "type": "web_search_tool_result",
-                        "tool_use_id": annotation_id,
-                        "content": search_results,
-                    }
-                )
+            item_type = item.get("type")
 
-        # Add main content from message
-        content_items = message_item.get("content", [])
-        for content_item in content_items:
-            content_type = content_item.get("type")
+            if item_type == "message":
+                # Update response metadata from message item
+                anthropic_response["id"] = item.get("id", anthropic_response["id"])
+                status = item.get("status")
+                anthropic_response["stop_reason"] = self._map_stop_reason(status)
 
-            if content_type == "output_text":
-                anthropic_response["content"].append(
-                    {"type": "text", "text": content_item.get("text", "")}
-                )
-            elif content_type == "function_call":
-                # Convert OpenAI function_call to Anthropic tool_use
+                # Add annotations (web search results) if present
+                annotations = item.get("annotations", [])
+                if annotations:
+                    annotation_id = f"srvtoolu_{item.get('id', 'unknown')}"
+                    anthropic_response["content"].append({
+                        "type": "server_tool_use",
+                        "id": annotation_id,
+                        "name": "web_search",
+                        "input": {"query": ""},
+                    })
+
+                    search_results = []
+                    for annotation in annotations:
+                        url_citation = annotation.get("url_citation", {})
+                        if url_citation:
+                            search_results.append({
+                                "type": "web_search_result",
+                                "url": url_citation.get("url", ""),
+                                "title": url_citation.get("title", ""),
+                            })
+
+                    if search_results:
+                        anthropic_response["content"].append({
+                            "type": "web_search_tool_result",
+                            "tool_use_id": annotation_id,
+                            "content": search_results,
+                        })
+
+                # Process message content
+                for content_item in item.get("content", []):
+                    content_type = content_item.get("type")
+
+                    if content_type == "output_text":
+                        anthropic_response["content"].append({
+                            "type": "text",
+                            "text": content_item.get("text", "")
+                        })
+                    elif content_type == "function_call":
+                        # Convert OpenAI function_call to Anthropic tool_use
+                        try:
+                            arguments_str = content_item.get("arguments", "{}")
+                            if isinstance(arguments_str, dict):
+                                arguments = arguments_str
+                            else:
+                                arguments = json.loads(arguments_str)
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            raw_args = content_item.get("arguments", "")
+                            arguments = {"raw_arguments": raw_args}
+
+                        anthropic_response["content"].append({
+                            "type": "tool_use",
+                            "id": content_item.get("call_id", ""),
+                            "name": content_item.get("name", ""),
+                            "input": arguments,
+                        })
+                        anthropic_response["stop_reason"] = "tool_use"
+
+            elif item_type == "reasoning":
+                # Add reasoning summary content (user-facing summary)
+                for summary_part in item.get("summary", []):
+                    is_dict = isinstance(summary_part, dict)
+                    is_summary = summary_part.get("type") == "summary_text"
+                    if is_dict and is_summary:
+                        anthropic_response["content"].append({
+                            "type": "text",
+                            "text": summary_part.get("text", ""),
+                        })
+
+            elif item_type == "function_call":
+                # Handle top-level function call items
                 try:
-                    arguments_str = content_item.get("arguments", "{}")
+                    arguments_str = item.get("arguments", "{}")
                     if isinstance(arguments_str, dict):
                         arguments = arguments_str
                     else:
                         arguments = json.loads(arguments_str)
                 except (json.JSONDecodeError, TypeError, ValueError):
-                    # Fallback to string representation for malformed JSON
-                    arguments = {"raw_arguments": content_item.get("arguments", "")}
+                    raw_args = item.get("arguments", "")
+                    arguments = {"raw_arguments": raw_args}
 
-                anthropic_response["content"].append(
-                    {
-                        "type": "tool_use",
-                        "id": content_item.get("call_id", ""),
-                        "name": content_item.get("name", ""),
-                        "input": arguments,
-                    }
-                )
-
-                # Update stop reason for tool use
+                anthropic_response["content"].append({
+                    "type": "tool_use",
+                    "id": item.get("call_id", ""),
+                    "name": item.get("name", ""),
+                    "input": arguments,
+                })
                 anthropic_response["stop_reason"] = "tool_use"
-
-        # Add reasoning summary if present and reasoning is supported
-        supports_reasoning = getattr(self.config.openai, "supports_reasoning", True)
-        if supports_reasoning and reasoning_item:
-            summary_parts = reasoning_item.get("summary", [])
-            for summary_part in summary_parts:
-                if summary_part.get("type") == "summary_text":
-                    anthropic_response["content"].append(
-                        {
-                            "type": "text",
-                            "text": summary_part.get("text", ""),
-                            "source": "reasoning_summary",
-                        }
-                    )
 
         return anthropic_response
 
@@ -276,9 +283,7 @@ class OpenAIAnthropicResponseAdapter:
                         content_block_index += 1
                         current_block_type = None
 
-                elif event_type == "reasoning.summary_text.delta" and getattr(
-                    self.config.openai, "supports_reasoning", True
-                ):
+                elif event_type == "reasoning.summary_text.delta":
                     # Start reasoning block if not already started
                     if current_block_type != "reasoning":
                         content_start = {
@@ -297,9 +302,7 @@ class OpenAIAnthropicResponseAdapter:
                     }
                     yield f"data: {json.dumps(delta_event)}\n\n"
 
-                elif event_type == "reasoning.summary_text.done" and getattr(
-                    self.config.openai, "supports_reasoning", True
-                ):
+                elif event_type == "reasoning.summary_text.done":
                     # Send reasoning summary block stop
                     if current_block_type == "reasoning":
                         stop_event = {
