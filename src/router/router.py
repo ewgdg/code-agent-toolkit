@@ -106,7 +106,7 @@ class ModelRouter:
 
     def _matches_override_condition(
         self,
-        override_rule,
+        override_rule: Any,  # Matches the override rule type from config
         headers: dict[str, str],
         request_data: dict[str, Any],
     ) -> bool:
@@ -198,7 +198,7 @@ class ModelRouter:
                         "System regex check",
                         expected_patterns=expected_value,
                         system_parts_count=len(system_parts),
-                        system_parts=(part[:100] + "..." for part in system_parts),
+                        system_parts=[part[:100] + "..." for part in system_parts],
                     )
 
                     compiled_pattern = override_rule.get_compiled_pattern(
@@ -209,6 +209,26 @@ class ModelRouter:
                     )
                     if not pattern_found:
                         logger.debug("System regex condition failed")
+                        return False
+
+                elif field_name == "user_regex":
+                    # Check if user messages match regex patterns
+                    user_parts = self._extract_user_content(request_data)
+                    logger.debug(
+                        "User regex check",
+                        expected_patterns=expected_value,
+                        user_parts_count=len(user_parts),
+                        user_parts=[part[:100] + "..." for part in user_parts],
+                    )
+
+                    compiled_pattern = override_rule.get_compiled_pattern(
+                        expected_value
+                    )
+                    pattern_found = any(
+                        compiled_pattern.search(part) for part in user_parts
+                    )
+                    if not pattern_found:
+                        logger.debug("User regex condition failed")
                         return False
 
                 else:
@@ -408,3 +428,41 @@ class ModelRouter:
 
         # Fallback: convert to string and return as list
         return [str(system)]
+
+    def _extract_user_content(self, request_data: dict[str, Any]) -> list[str]:
+        """
+        Extract user message content from the last user message in request data.
+
+        Returns content as a list of text parts from the most recent user message.
+        Handles Anthropic Messages API format where messages is a list of message
+        objects with role and content fields.
+        """
+        messages = request_data.get("messages", [])
+        user_parts = []
+
+        # Find the last user message
+        last_user_message = None
+        for message in reversed(messages):
+            if isinstance(message, dict) and message.get("role") == "user":
+                last_user_message = message
+                break
+
+        if not last_user_message:
+            return []
+
+        content = last_user_message.get("content", "")
+
+        if isinstance(content, str):
+            user_parts.append(content)
+        elif isinstance(content, list):
+            # Handle content as list of blocks (text, image, etc.)
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text_content = block.get("text", "")
+                    if text_content:
+                        user_parts.append(text_content)
+                elif isinstance(block, str):
+                    # Handle mixed content formats
+                    user_parts.append(block)
+
+        return user_parts

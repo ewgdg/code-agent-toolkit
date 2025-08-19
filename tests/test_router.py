@@ -273,7 +273,6 @@ class TestModelRouter:
         assert decision.target == "anthropic"
         assert decision.model == "passthrough"
 
-
     def test_override_rules_header_list_values(self):
         """Test header matching with list of values."""
         self.config.overrides = [
@@ -394,7 +393,6 @@ class TestModelRouter:
         assert decision.target == "anthropic"
         assert decision.model == "passthrough"
 
-
     def test_provider_model_query_parameters(self):
         """Test parsing model query parameters from override rules."""
         test_cases = [
@@ -472,3 +470,163 @@ class TestModelRouter:
             param_name = param_string.split("=")[0]
 
             assert config[param_name] == expected_value
+
+    def test_user_regex_detection(self):
+        """Test routing decision for system reminder messages using user_regex."""
+        # Add override rule for system-reminder detection
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"user_regex": r"<system-reminder>"}},
+                model="anthropic/claude-3-sonnet",
+            )
+        ]
+
+        headers = {}
+        request_data = {
+            "model": "claude-3-sonnet",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "<system-reminder>This is a system reminder about the project"
+                        "</system-reminder>What should I do?"
+                    ),
+                }
+            ],
+        }
+
+        decision = self.router.decide_route(headers, request_data)
+
+        assert decision.target == "anthropic"
+        assert decision.model == "claude-3-sonnet"
+        assert "override rule 1 matched" in decision.reason.lower()
+
+    def test_user_regex_detection_with_text_blocks(self):
+        """Test user_regex detection with structured content blocks."""
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"user_regex": r"CLAUDE\.md"}},
+                model="openai/gpt-4o",
+            )
+        ]
+
+        headers = {}
+        request_data = {
+            "model": "claude-3-sonnet",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Contents of /home/user/project/CLAUDE.md "
+                                "(project instructions)"
+                            ),
+                        }
+                    ],
+                }
+            ],
+        }
+
+        decision = self.router.decide_route(headers, request_data)
+
+        assert decision.target == "openai"
+        assert decision.model == "gpt-4o"
+
+    def test_user_regex_not_detected(self):
+        """Test that normal user messages without matching regex are not routed."""
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"user_regex": r"<system-reminder>"}},
+                model="openai/gpt-4o",
+            )
+        ]
+
+        headers = {}
+        request_data = {
+            "model": "claude-3-sonnet",
+            "messages": [
+                {"role": "user", "content": "What's the weather today?"},
+                {"role": "assistant", "content": "I can't check the weather."},
+                {"role": "user", "content": "How about tomorrow?"},
+            ],
+        }
+
+        decision = self.router.decide_route(headers, request_data)
+
+        # Should fallback to default (Anthropic passthrough)
+        assert decision.target == "anthropic"
+        assert decision.model == "passthrough"
+
+    def test_user_regex_last_user_message_only(self):
+        """Test user_regex matching only the last user message."""
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"user_regex": r"urgent.*help"}},
+                model="openai/gpt-5",
+            )
+        ]
+
+        headers = {}
+        request_data = {
+            "model": "claude-3-sonnet",
+            "messages": [
+                {"role": "user", "content": "I need urgent help with my code"},
+                {"role": "assistant", "content": "Hi! How can I help?"},
+                {"role": "user", "content": "Actually, just hello there"},
+            ],
+        }
+
+        decision = self.router.decide_route(headers, request_data)
+
+        # Should NOT match because the last user message doesn't contain "urgent help"
+        assert decision.target == "anthropic"
+        assert decision.model == "passthrough"
+
+    def test_user_regex_matches_last_user_message(self):
+        """Test user_regex matches when pattern is in the last user message."""
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"user_regex": r"urgent.*help"}},
+                model="openai/gpt-5",
+            )
+        ]
+
+        headers = {}
+        request_data = {
+            "model": "claude-3-sonnet",
+            "messages": [
+                {"role": "user", "content": "Hello there"},
+                {"role": "assistant", "content": "Hi! How can I help?"},
+                {"role": "user", "content": "I need urgent help with my code"},
+            ],
+        }
+
+        decision = self.router.decide_route(headers, request_data)
+
+        # Should match because the last user message contains "urgent help"
+        assert decision.target == "openai"
+        assert decision.model == "gpt-5"
+
+    def test_user_regex_case_insensitive(self):
+        """Test that user_regex is case insensitive."""
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"user_regex": r"ERROR"}},
+                model="openai/gpt-4o-mini",
+            )
+        ]
+
+        headers = {}
+        request_data = {
+            "model": "claude-3-sonnet",
+            "messages": [
+                {"role": "user", "content": "I'm getting an error in my application"},
+            ],
+        }
+
+        decision = self.router.decide_route(headers, request_data)
+
+        assert decision.target == "openai"
+        assert decision.model == "gpt-4o-mini"
