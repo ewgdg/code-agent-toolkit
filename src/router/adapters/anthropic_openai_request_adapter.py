@@ -119,7 +119,12 @@ class AnthropicOpenAIRequestAdapter:
 
             if isinstance(content, str):
                 # Simple text message (Anthropic shorthand format)
-                current_msg = append_content_to_msg(current_msg, content)
+                current_msg = append_content_to_msg(
+                    current_msg, {
+                        "type": _role_to_content_type(role, "text"),
+                        "text": content,
+                    }
+                )
             elif isinstance(content, list):
                 for block in content:
                     if isinstance(block, dict):
@@ -230,7 +235,12 @@ class AnthropicOpenAIRequestAdapter:
 
             else:
                 # Fallback: stringify content
-                current_msg = append_content_to_msg(current_msg, str(content))
+                current_msg = append_content_to_msg(
+                    current_msg, {
+                        "type": _role_to_content_type(role, "text"),
+                        "text": str(content),
+                    }
+                )
 
             # Flush any remaining accumulated text-only message
             flush_message(current_msg)
@@ -325,12 +335,7 @@ class AnthropicOpenAIRequestAdapter:
         )
 
         # Debug: Log the full request being sent but avoid leaking secrets
-        debug_request = {
-            k: v
-            for k, v in openai_request.items()
-            if k.lower() not in ("api_key", "authorization")
-        }
-        logger.debug("Full OpenAI request", request=debug_request)
+        # logger.debug("Full OpenAI request", request=openai_request)
 
         response = await self.client.post(
             url, headers=request_headers, json=openai_request
@@ -339,18 +344,8 @@ class AnthropicOpenAIRequestAdapter:
         return response
 
     def _get_api_key(self, headers: dict[str, str]) -> str | None:
-        """Get OpenAI API key from headers or environment (case-insensitive)."""
-
-        # Normalize header keys to lowercase for robust lookup
-        if headers:
-            lower_headers = {k.lower(): v for k, v in headers.items()}
-
-            # Support Authorization: Bearer <key> as a per-request override
-            auth = lower_headers.get("authorization")
-            if auth and auth.lower().startswith("bearer "):
-                return auth.split(" ", 1)[1].strip()
-
-        # Get from environment
+        """Get OpenAI API key from environment only."""
+        # Always use environment variable, ignore any header-based keys
         return os.getenv(self.config.openai.api_key_env)
 
     async def close(self) -> None:
