@@ -54,5 +54,5 @@ overrides:
   
   - when:
       request:
-        model_regex: '^gpt(?:-.*)?$'
+        model_regex: '^gpt$'
     model: "openai/gpt-5"
