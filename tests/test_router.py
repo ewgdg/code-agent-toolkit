@@ -28,7 +28,7 @@ class TestModelRouter:
 
         assert decision.target == "openai"
         assert decision.model == "gpt-5"
-        assert "override rule 1 matched" in decision.reasoning.lower()
+        assert "override rule 1 matched" in decision.reason.lower()
 
     def test_haiku_model_detection(self):
         """Test routing decision for haiku models using override rules."""
@@ -46,7 +46,7 @@ class TestModelRouter:
 
         assert decision.target == "openai"
         assert decision.model == "gpt-5-mini"
-        assert "override rule 1 matched" in decision.reasoning.lower()
+        assert "override rule 1 matched" in decision.reason.lower()
 
     def test_passthrough_default(self):
         """Test default passthrough behavior."""
@@ -57,7 +57,7 @@ class TestModelRouter:
 
         assert decision.target == "anthropic"
         assert decision.model == "passthrough"
-        assert "passthrough" in decision.reasoning.lower()
+        assert "passthrough" in decision.reason.lower()
 
     def test_reasoning_effort_mapping(self):
         """Test reasoning effort mapping from thinking budget tokens."""
@@ -115,7 +115,7 @@ class TestModelRouter:
 
         assert decision.target == "openai"
         assert decision.model == "gpt-4o-mini"
-        assert "override rule 1 matched" in decision.reasoning.lower()
+        assert "override rule 1 matched" in decision.reason.lower()
 
     def test_case_insensitive_header_matching(self):
         """Test case-insensitive header matching with override rules."""
@@ -131,7 +131,7 @@ class TestModelRouter:
 
         assert decision.target == "openai"
         assert decision.model == "gpt-5"
-        assert "override rule 1 matched" in decision.reasoning.lower()
+        assert "override rule 1 matched" in decision.reason.lower()
 
     def test_override_rules_multiple_conditions(self):
         """Test override rules with multiple conditions."""
@@ -153,7 +153,7 @@ class TestModelRouter:
 
         assert decision.target == "openai"
         assert decision.model == "gpt-4o"
-        assert "override rule 1 matched" in decision.reasoning.lower()
+        assert "override rule 1 matched" in decision.reason.lower()
 
         # Should not match when only one condition is met
         headers = {"X-Environment": "development"}
@@ -354,7 +354,7 @@ class TestModelRouter:
 
         assert decision.target == "anthropic"
         assert decision.model == "passthrough"
-        assert "no routing rules matched" in decision.reasoning.lower()
+        assert "no routing rules matched" in decision.reason.lower()
 
     def test_override_rules_empty_list(self):
         """Test behavior with empty override rules list."""

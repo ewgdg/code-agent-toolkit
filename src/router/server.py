@@ -125,7 +125,7 @@ class ProxyRouter:
                 request_id=request_id,
                 target=decision.target,
                 model=decision.model,
-                reasoning=decision.reasoning,
+                reason=decision.reason,
             )
 
             # Route request
@@ -351,6 +351,13 @@ def create_app(config_path: Path) -> FastAPI:
 def main():
     """Main entry point."""
     import argparse
+    from dotenv import load_dotenv
+
+    # Load environment variables from .env file (in project root)
+    # import os
+    # project_root = Path(__file__).parent.parent.parent
+    # dotenv_path = project_root / ".env"
+    load_dotenv(override=True)
 
     parser = argparse.ArgumentParser(description="Claude Code Model Router")
     parser.add_argument(
