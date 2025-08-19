@@ -32,7 +32,7 @@ overrides:
   - when:
       request:
         user_regex: '<system-reminder>[\s\S]*\b(?:plan mode is (?:activated|active|triggered|on)|in plan mode)\b[\s\S]*</system-reminder>'
-    model: "openai/gpt-5"
+    model: "openai/gpt-5?reasoning.effort=high&reasoning.summary=auto"
     
   # Route opus model requests to powerful OpenAI model
   - when:
