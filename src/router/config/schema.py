@@ -29,8 +29,11 @@ class ReasoningThresholds(BaseModel):
     @field_validator("medium_max")
     @classmethod
     def validate_medium_greater_than_low(cls, v: int, info: Any) -> int:
-        if (hasattr(info, 'data') and "low_max" in info.data
-            and v <= info.data["low_max"]):
+        if (
+            hasattr(info, "data")
+            and "low_max" in info.data
+            and v <= info.data["low_max"]
+        ):
             raise ValueError("medium_max must be greater than low_max")
         return v
 

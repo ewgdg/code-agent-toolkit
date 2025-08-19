@@ -1,5 +1,6 @@
 import re
 from typing import Any
+from urllib.parse import parse_qs
 
 import structlog
 
@@ -9,10 +10,17 @@ logger = structlog.get_logger(__name__)
 
 
 class RouterDecision:
-    def __init__(self, target: str, model: str, reason: str = ""):
+    def __init__(
+        self,
+        target: str,
+        model: str,
+        reason: str = "",
+        model_config: dict[str, Any] | None = None,
+    ):
         self.target = target  # "openai" or "anthropic"
         self.model = model  # OpenAI model to use if target is "openai"
         self.reason = reason
+        self.model_config = model_config or {}  # Model config from query params
 
 
 class ModelRouter:
@@ -75,14 +83,20 @@ class ModelRouter:
             )
 
             if self._matches_override_condition(override.when, headers, request_data):
-                provider, model = self._parse_provider_model(override.model)
+                provider, model, model_config = self._parse_provider_model(
+                    override.model
+                )
                 logger.debug(
-                    f"Override rule {i + 1} MATCHED", provider=provider, model=model
+                    f"Override rule {i + 1} MATCHED",
+                    provider=provider,
+                    model=model,
+                    model_config=model_config,
                 )
                 return RouterDecision(
                     target=provider,
                     model=model,
                     reason=f"Override rule {i + 1} matched: {override.when}",
+                    model_config=model_config,
                 )
             else:
                 logger.debug(f"Override rule {i + 1} did NOT match")
@@ -145,7 +159,10 @@ class ModelRouter:
 
                     try:
                         if isinstance(expected_value, str):
-                            if not re.search(expected_value, actual_value, re.IGNORECASE):
+                            match = re.search(
+                                expected_value, actual_value, re.IGNORECASE
+                            )
+                            if not match:
                                 logger.debug("Model regex condition failed")
                                 return False
                         elif isinstance(expected_value, list):
@@ -156,9 +173,12 @@ class ModelRouter:
                                 logger.debug("Model regex condition failed (list)")
                                 return False
                     except re.error as e:
-                        logger.error("Invalid regex pattern", pattern=expected_value, error=str(e))
+                        logger.error(
+                            "Invalid regex pattern",
+                            pattern=expected_value,
+                            error=str(e),
+                        )
                         return False
-
 
                 elif field_name == "has_tool":
                     # Check if request contains specific tool
@@ -192,14 +212,21 @@ class ModelRouter:
                                 return False
                         elif isinstance(expected_value, list):
                             pattern_found = any(
-                                any(re.search(pattern, part, re.IGNORECASE) for part in system_parts)
+                                any(
+                                    re.search(pattern, part, re.IGNORECASE)
+                                    for part in system_parts
+                                )
                                 for pattern in expected_value
                             )
                             if not pattern_found:
                                 logger.debug("System regex condition failed (list)")
                                 return False
                     except re.error as e:
-                        logger.error("Invalid regex pattern", pattern=expected_value, error=str(e))
+                        logger.error(
+                            "Invalid regex pattern",
+                            pattern=expected_value,
+                            error=str(e),
+                        )
                         return False
 
                 else:
@@ -252,21 +279,92 @@ class ModelRouter:
 
         return tool_names
 
-    def _parse_provider_model(self, provider_model_string: str) -> tuple[str, str]:
+    def _parse_provider_model(
+        self, provider_model_string: str
+    ) -> tuple[str, str, dict[str, Any]]:
         """
-        Parse provider/model format and return (target, model).
+        Parse provider/model format with optional query parameters
+        and return (target, model, config).
 
         Examples:
-        - "openai/gpt-5" -> ("openai", "gpt-5")
-        - "anthropic/claude-3-sonnet" -> ("anthropic", "claude-3-sonnet")
-        - "gpt-4" -> ("openai", "gpt-4")  # fallback to openai if no provider
+        - "openai/gpt-5" -> ("openai", "gpt-5", {})
+        - "anthropic/claude-3-sonnet" -> ("anthropic", "claude-3-sonnet", {})
+        - "gpt-4" -> ("openai", "gpt-4", {})  # fallback to openai if no provider
+        - "openai/gpt-5?reasoning.effort=low&temperature=0.5" ->
+          ("openai", "gpt-5", {"reasoning": {"effort": "low"}, "temperature": 0.5})
         """
+        model_config: dict[str, Any] = {}
+
+        # Check if there are query parameters
+        if "?" in provider_model_string:
+            base_model, query_string = provider_model_string.split("?", 1)
+
+            # Parse query parameters
+            query_params = parse_qs(query_string)
+
+            # Convert query parameters to nested configuration
+            for key, values in query_params.items():
+                # Use the first value if multiple values are provided
+                value = values[0] if values else ""
+
+                # Handle parameters (both nested and direct)
+                # e.g., "reasoning.effort" -> {"reasoning": {"effort": value}}
+                # e.g., "temperature" -> {"temperature": value}
+                parts = key.split(".")
+                current_dict = model_config
+
+                # Navigate through nested structure, creating dicts as needed
+                for part in parts[:-1]:
+                    if part not in current_dict:
+                        current_dict[part] = {}
+                    current_dict = current_dict[part]
+
+                # Set the final value, attempting to convert to appropriate type
+                final_key = parts[-1]
+                current_dict[final_key] = self._convert_param_value(value)
+
+            provider_model_string = base_model
+
+        # Parse provider/model as before
         if "/" in provider_model_string:
             provider, model = provider_model_string.split("/", 1)
-            return provider.lower(), model
+            return provider.lower(), model, model_config
         else:
             # Fallback: assume OpenAI if no provider specified
-            return "openai", provider_model_string
+            return "openai", provider_model_string, model_config
+
+    def _convert_param_value(self, value: str) -> Any:
+        """
+        Convert query parameter value to appropriate Python type.
+
+        Attempts to convert strings to:
+        - int if it's a valid integer
+        - float if it's a valid float
+        - bool if it's "true"/"false" (case-insensitive)
+        - original string otherwise
+        """
+        if not value:
+            return value
+
+        # Try boolean conversion first (case-insensitive)
+        if value.lower() in ("true", "false"):
+            return value.lower() == "true"
+
+        # Try integer conversion
+        try:
+            if "." not in value:  # Only try int if no decimal point
+                return int(value)
+        except ValueError:
+            pass
+
+        # Try float conversion
+        try:
+            return float(value)
+        except ValueError:
+            pass
+
+        # Return as string if no conversion worked
+        return value
 
     def get_reasoning_effort(self, request_data: dict[str, Any]) -> str:
         """
@@ -299,20 +397,20 @@ class ModelRouter:
     def _extract_system_content(self, request_data: dict[str, Any]) -> list[str]:
         """
         Extract system prompt content from request data as a list of text parts.
-        
+
         Handles both string and list formats:
         - String: returns [string]
         - List: extracts 'text' fields from Anthropic format objects
         """
-        
+
         system = request_data.get("system")
-        
+
         if not system:
             return []
-            
+
         if isinstance(system, str):
             return [system]
-            
+
         if isinstance(system, list):
             # Handle Anthropic system format: list of objects with 'text' field
             text_parts = []
@@ -325,6 +423,6 @@ class ModelRouter:
                     # Handle mixed list formats
                     text_parts.append(item)
             return text_parts
-            
+
         # Fallback: convert to string and return as list
         return [str(system)]

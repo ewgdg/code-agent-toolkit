@@ -127,12 +127,17 @@ class ProxyRouter:
                 target=decision.target,
                 model=decision.model,
                 reason=decision.reason,
+                model_config=decision.model_config,
             )
 
             # Route request
             if decision.target == "openai":
                 return await self._handle_openai_request(
-                    request_data, decision.model, headers, request_id
+                    request_data,
+                    decision.model,
+                    decision.model_config,
+                    headers,
+                    request_id,
                 )
             else:
                 return await self._handle_passthrough_request(
@@ -152,6 +157,7 @@ class ProxyRouter:
         self,
         request_data: dict[str, Any],
         target_model: str,
+        model_config: dict[str, Any],
         headers: dict[str, str],
         request_id: str,
     ) -> Response:
@@ -160,7 +166,7 @@ class ProxyRouter:
         try:
             # Translate request
             openai_request = await self.request_adapter.adapt_request(
-                request_data, target_model
+                request_data, target_model, model_config
             )
 
             # Make OpenAI request

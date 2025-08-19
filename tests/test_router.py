@@ -13,8 +13,12 @@ class TestModelRouter:
         # Add override rule for plan mode
         self.config.overrides = [
             OverrideRule(
-                when={"request": {"system_regex": r"plan mode is (activated|triggered|on)"}}, 
-                model="openai/gpt-4o-reasoning"
+                when={
+                    "request": {
+                        "system_regex": r"plan mode is (activated|triggered|on)"
+                    }
+                },
+                model="openai/gpt-4o-reasoning",
             )
         ]
 
@@ -23,7 +27,12 @@ class TestModelRouter:
             "model": "claude-3-sonnet",
             "system": [
                 {"text": "You are Claude Code, an AI assistant."},
-                {"text": "Plan mode is activated. You should break down complex tasks into steps."},
+                {
+                    "text": (
+                        "Plan mode is activated. "
+                        "You should break down complex tasks into steps."
+                    )
+                },
             ],
             "messages": [{"role": "user", "content": "Help me implement a feature"}],
         }
@@ -38,15 +47,18 @@ class TestModelRouter:
         """Test plan mode detection with string format system prompt."""
         self.config.overrides = [
             OverrideRule(
-                when={"request": {"system_regex": r"planning.*mode"}}, 
-                model="openai/gpt-4o-reasoning"
+                when={"request": {"system_regex": r"planning.*mode"}},
+                model="openai/gpt-4o-reasoning",
             )
         ]
 
         headers = {}
         request_data = {
             "model": "claude-3-sonnet",
-            "system": "You are Claude Code. Planning mode is now active for this complex task.",
+            "system": (
+                "You are Claude Code. "
+                "Planning mode is now active for this complex task."
+            ),
             "messages": [{"role": "user", "content": "Build an app"}],
         }
 
@@ -54,13 +66,13 @@ class TestModelRouter:
 
         assert decision.target == "openai"
         assert decision.model == "gpt-4o-reasoning"
-        
+
     def test_plan_mode_not_detected(self):
-        """Test that normal requests without plan mode are not routed to reasoning model."""
+        """Test that normal requests without plan mode are not routed."""
         self.config.overrides = [
             OverrideRule(
-                when={"request": {"system_regex": r"\bplan mode\b"}}, 
-                model="openai/gpt-4o-reasoning"
+                when={"request": {"system_regex": r"\bplan mode\b"}},
+                model="openai/gpt-4o-reasoning",
             )
         ]
 
@@ -420,7 +432,7 @@ class TestModelRouter:
         self.config.overrides = [
             OverrideRule(
                 when={"request": {"model_regex": "[invalid(regex"}},
-                model="openai/gpt-4o"
+                model="openai/gpt-4o",
             )
         ]
 
@@ -432,3 +444,81 @@ class TestModelRouter:
         # Should fallback to default when regex is invalid
         assert decision.target == "anthropic"
         assert decision.model == "passthrough"
+
+    def test_provider_model_query_parameters(self):
+        """Test parsing model query parameters from override rules."""
+        test_cases = [
+            # Basic query parameter
+            ("openai/gpt-5?temperature=0.5", "openai", "gpt-5", {"temperature": 0.5}),
+            # Nested query parameter
+            (
+                "openai/gpt-5?reasoning.effort=low",
+                "openai",
+                "gpt-5",
+                {"reasoning": {"effort": "low"}},
+            ),
+            # Multiple parameters
+            (
+                "openai/gpt-5?reasoning.effort=high&temperature=0.3",
+                "openai",
+                "gpt-5",
+                {"reasoning": {"effort": "high"}, "temperature": 0.3},
+            ),
+            # Boolean parameter
+            ("openai/gpt-5?stream=true", "openai", "gpt-5", {"stream": True}),
+            # No query parameters
+            ("openai/gpt-5", "openai", "gpt-5", {}),
+        ]
+
+        for (
+            provider_model_string,
+            expected_provider,
+            expected_model,
+            expected_config,
+        ) in test_cases:
+            provider, model, config = self.router._parse_provider_model(
+                provider_model_string
+            )
+
+            assert provider == expected_provider
+            assert model == expected_model
+            assert config == expected_config
+
+    def test_override_rule_with_query_parameters(self):
+        """Test that override rules pass through model configuration."""
+        self.config.overrides = [
+            OverrideRule(
+                when={"header": {"X-Test": "config"}},
+                model="openai/gpt-5?reasoning.effort=high&temperature=0.2",
+            )
+        ]
+
+        headers = {"X-Test": "config"}
+        request_data = {"model": "claude-3-sonnet"}
+
+        decision = self.router.decide_route(headers, request_data)
+
+        assert decision.target == "openai"
+        assert decision.model == "gpt-5"
+        assert decision.model_config == {
+            "reasoning": {"effort": "high"},
+            "temperature": 0.2,
+        }
+
+    def test_parameter_type_conversion(self):
+        """Test automatic type conversion of query parameters."""
+        test_cases = [
+            ("temperature=0.5", 0.5),  # float
+            ("max_tokens=1000", 1000),  # int
+            ("stream=true", True),  # boolean true
+            ("stream=false", False),  # boolean false
+            ("model_name=gpt-5", "gpt-5"),  # string
+        ]
+
+        for param_string, expected_value in test_cases:
+            provider, model, config = self.router._parse_provider_model(
+                f"openai/gpt-5?{param_string}"
+            )
+            param_name = param_string.split("=")[0]
+
+            assert config[param_name] == expected_value

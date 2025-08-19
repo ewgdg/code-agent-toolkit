@@ -47,39 +47,44 @@ class OpenAIAnthropicResponseAdapter:
                 annotations = item.get("annotations", [])
                 if annotations:
                     annotation_id = f"srvtoolu_{item.get('id', 'unknown')}"
-                    anthropic_response["content"].append({
-                        "type": "server_tool_use",
-                        "id": annotation_id,
-                        "name": "web_search",
-                        "input": {"query": ""},
-                    })
+                    anthropic_response["content"].append(
+                        {
+                            "type": "server_tool_use",
+                            "id": annotation_id,
+                            "name": "web_search",
+                            "input": {"query": ""},
+                        }
+                    )
 
                     search_results = []
                     for annotation in annotations:
                         url_citation = annotation.get("url_citation", {})
                         if url_citation:
-                            search_results.append({
-                                "type": "web_search_result",
-                                "url": url_citation.get("url", ""),
-                                "title": url_citation.get("title", ""),
-                            })
+                            search_results.append(
+                                {
+                                    "type": "web_search_result",
+                                    "url": url_citation.get("url", ""),
+                                    "title": url_citation.get("title", ""),
+                                }
+                            )
 
                     if search_results:
-                        anthropic_response["content"].append({
-                            "type": "web_search_tool_result",
-                            "tool_use_id": annotation_id,
-                            "content": search_results,
-                        })
+                        anthropic_response["content"].append(
+                            {
+                                "type": "web_search_tool_result",
+                                "tool_use_id": annotation_id,
+                                "content": search_results,
+                            }
+                        )
 
                 # Process message content
                 for content_item in item.get("content", []):
                     content_type = content_item.get("type")
 
                     if content_type == "output_text":
-                        anthropic_response["content"].append({
-                            "type": "text",
-                            "text": content_item.get("text", "")
-                        })
+                        anthropic_response["content"].append(
+                            {"type": "text", "text": content_item.get("text", "")}
+                        )
                     elif content_type == "function_call":
                         # Convert OpenAI function_call to Anthropic tool_use
                         try:
@@ -92,12 +97,14 @@ class OpenAIAnthropicResponseAdapter:
                             raw_args = content_item.get("arguments", "")
                             arguments = {"raw_arguments": raw_args}
 
-                        anthropic_response["content"].append({
-                            "type": "tool_use",
-                            "id": content_item.get("call_id", ""),
-                            "name": content_item.get("name", ""),
-                            "input": arguments,
-                        })
+                        anthropic_response["content"].append(
+                            {
+                                "type": "tool_use",
+                                "id": content_item.get("call_id", ""),
+                                "name": content_item.get("name", ""),
+                                "input": arguments,
+                            }
+                        )
                         anthropic_response["stop_reason"] = "tool_use"
 
             elif item_type == "reasoning":
@@ -106,10 +113,12 @@ class OpenAIAnthropicResponseAdapter:
                     is_dict = isinstance(summary_part, dict)
                     is_summary = summary_part.get("type") == "summary_text"
                     if is_dict and is_summary:
-                        anthropic_response["content"].append({
-                            "type": "text",
-                            "text": summary_part.get("text", ""),
-                        })
+                        anthropic_response["content"].append(
+                            {
+                                "type": "text",
+                                "text": summary_part.get("text", ""),
+                            }
+                        )
 
             elif item_type == "function_call":
                 # Handle top-level function call items
@@ -123,12 +132,14 @@ class OpenAIAnthropicResponseAdapter:
                     raw_args = item.get("arguments", "")
                     arguments = {"raw_arguments": raw_args}
 
-                anthropic_response["content"].append({
-                    "type": "tool_use",
-                    "id": item.get("call_id", ""),
-                    "name": item.get("name", ""),
-                    "input": arguments,
-                })
+                anthropic_response["content"].append(
+                    {
+                        "type": "tool_use",
+                        "id": item.get("call_id", ""),
+                        "name": item.get("name", ""),
+                        "input": arguments,
+                    }
+                )
                 anthropic_response["stop_reason"] = "tool_use"
 
         return anthropic_response

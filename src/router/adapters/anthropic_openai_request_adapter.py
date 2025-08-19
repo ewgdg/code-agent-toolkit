@@ -24,9 +24,14 @@ class AnthropicOpenAIRequestAdapter:
         )
 
     async def adapt_request(
-        self, anthropic_request: dict[str, Any], target_model: str
+        self,
+        anthropic_request: dict[str, Any],
+        target_model: str,
+        model_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Translate Anthropic Messages API request to OpenAI Responses API request."""
+
+        model_config = model_config or {}
 
         openai_request = {
             "model": target_model,
@@ -78,6 +83,10 @@ class AnthropicOpenAIRequestAdapter:
                 reasoning_config["summary"] = "auto"
             openai_request["reasoning"] = reasoning_config
 
+        # Apply model configuration parameters from query string
+        if model_config:
+            openai_request.update(model_config)
+
         return openai_request
 
     def _convert_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -120,10 +129,11 @@ class AnthropicOpenAIRequestAdapter:
             if isinstance(content, str):
                 # Simple text message (Anthropic shorthand format)
                 current_msg = append_content_to_msg(
-                    current_msg, {
+                    current_msg,
+                    {
                         "type": _role_to_content_type(role, "text"),
                         "text": content,
-                    }
+                    },
                 )
             elif isinstance(content, list):
                 for block in content:
@@ -236,10 +246,11 @@ class AnthropicOpenAIRequestAdapter:
             else:
                 # Fallback: stringify content
                 current_msg = append_content_to_msg(
-                    current_msg, {
+                    current_msg,
+                    {
                         "type": _role_to_content_type(role, "text"),
                         "text": str(content),
-                    }
+                    },
                 )
 
             # Flush any remaining accumulated text-only message
