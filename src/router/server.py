@@ -363,7 +363,7 @@ def main():
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path(__file__).parent.parent.parent / "router.yaml",
+        default=Path("router.yaml"),
         help="Path to configuration file (default: router.yaml)",
     )
     parser.add_argument(
