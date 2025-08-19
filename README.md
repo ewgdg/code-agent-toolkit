@@ -1,21 +1,46 @@
-# Code Agent Toolkit
+# Claude Code Model Router
 
-Collection of tools for AI code agents.
+Intelligent proxy that routes Claude Code CLI traffic between Anthropic and OpenAI APIs with automatic format translation.
 
-## Tools
+## Features
 
-### Router
+- Smart routing based on configurable rules (plan mode, model patterns, etc.)
+- Seamless API translation between Anthropic Messages and OpenAI Chat Completions
+- Hot configuration reload and streaming support
 
-Proxy router for Claude Code CLI traffic with OpenAI translation support.
-
-## Installation
+## Quick Start
 
 ```bash
-uv sync --dev
+# Install
+uv sync
+
+# Configure API key
+cp .env.example .env
+# Edit .env with your OPENAI_API_KEY
+
+# Run
+uv run claude-router
 ```
 
-## Usage
+Point Claude Code CLI to `http://localhost:8787` to use the router.
+
+## Configuration
+
+Edit `router.yaml` to customize routing rules:
+
+```yaml
+overrides:
+  # Route plan mode to reasoning model with custom config
+  - when:
+      request:
+        user_regex: '<system-reminder>[\s\S]*plan mode[\s\S]*</system-reminder>'
+    model: "openai/gpt-5?reasoning.effort=high&reasoning.summary=auto"
+```
+
+## Development
 
 ```bash
-uv run claude-router --config router.yaml
+uv run pytest              # Tests
+uv run mypy src/          # Type check  
+uv run ruff check src/    # Lint
 ```

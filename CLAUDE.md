@@ -69,12 +69,14 @@ All routing behavior is controlled by `router.yaml`:
 
 Override rules support various `when` conditions:
 - `request.system_regex: "regex_pattern"` - matches system prompts using regex patterns (case-insensitive)
+- `request.user_regex: "regex_pattern"` - matches user messages using regex patterns (case-insensitive)
 - `request.model_regex: "regex_pattern"` - matches model names using regex patterns (case-insensitive)
 - `request.has_tool: "ToolName"` - matches requests containing specific tool calls
 - `header.HeaderName: "value"` - HTTP header matching
 
 **Regex Examples:**
 - `system_regex: r"\bplan mode is (activated|triggered|on)\b"` - matches plan mode activation
+- `user_regex: r"<system-reminder>[\s\S]*\b(?:plan mode is (?:activated|active|triggered|on)|in plan mode)\b[\s\S]*</system-reminder>"` - matches system reminders with plan mode patterns
 - `model_regex: r"^claude-3\.5-(sonnet|haiku)"` - matches Claude 3.5 models
 - `model_regex: "opus"` - matches any model containing "opus"
 
@@ -104,5 +106,6 @@ Override rules support various `when` conditions:
 
 The `ModelRouter.decide_route()` method is the main entry point that processes override rules and returns routing decisions. Override rule matching happens in `_matches_override_condition()` with support for various condition types including:
 - System prompt regex analysis via `_extract_system_content()`
+- User message regex analysis via `_extract_user_content()` (matches last user message only)
 - Model regex matching with case-insensitive search and error handling
 - Tool detection via `_has_tool()`
