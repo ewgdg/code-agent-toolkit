@@ -35,7 +35,6 @@ class ReasoningThresholds(BaseModel):
 class OpenAIConfig(BaseModel):
     api_key_env: str = Field(default="OPENAI_API_KEY")
     reasoning_effort_default: str = Field(default="minimal")
-    supports_reasoning: bool = Field(default=False)
     reasoning_thresholds: ReasoningThresholds = Field(
         default_factory=ReasoningThresholds
     )
