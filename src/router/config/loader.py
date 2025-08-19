@@ -1,13 +1,11 @@
 import os
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING, Type, cast, Any
 
 import structlog
 import yaml
 from pydantic import ValidationError
-from watchdog.events import FileSystemEventHandler, FileSystemEvent
-
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
@@ -115,7 +113,7 @@ class ConfigLoader:
 
     def __exit__(
         self,
-        exc_type: Type[BaseException] | None,
+        exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:

@@ -17,6 +17,7 @@ dependencies = [
     "structlog>=24.4.0",
     "watchdog>=4.0.2",
     "anthropic>=0.40.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]

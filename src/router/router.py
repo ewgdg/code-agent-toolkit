@@ -8,10 +8,10 @@ logger = structlog.get_logger(__name__)
 
 
 class RouterDecision:
-    def __init__(self, target: str, model: str, reasoning: str = ""):
+    def __init__(self, target: str, model: str, reason: str = ""):
         self.target = target  # "openai" or "anthropic"
         self.model = model  # OpenAI model to use if target is "openai"
-        self.reasoning = reasoning
+        self.reason = reason
 
 
 class ModelRouter:
@@ -32,7 +32,7 @@ class ModelRouter:
         messages = request_data.get("messages", [])
         available_tools = self._extract_tools(request_data)
 
-        logger.info(
+        logger.debug(
             "Routing decision started",
             model=model,
             message_count=len(messages),
@@ -43,20 +43,20 @@ class ModelRouter:
         # Check override rules first (highest precedence)
         override_decision = self._check_overrides(headers, request_data)
         if override_decision:
-            logger.info(
+            logger.debug(
                 "Override rule matched",
                 target=override_decision.target,
                 model=override_decision.model,
-                reasoning=override_decision.reasoning,
+                reason=override_decision.reason,
             )
             return override_decision
 
         # Default: passthrough to Anthropic
-        logger.info("Using default passthrough to Anthropic")
+        logger.debug("Using default passthrough to Anthropic")
         return RouterDecision(
             target="anthropic",
             model="passthrough",
-            reasoning="No routing rules matched, using passthrough",
+            reason="No routing rules matched, using passthrough",
         )
 
     def _check_overrides(
@@ -64,7 +64,7 @@ class ModelRouter:
     ) -> RouterDecision | None:
         """Check override rules for routing decisions."""
 
-        logger.info(f"Checking {len(self.config.overrides)} override rules")
+        logger.debug(f"Checking {len(self.config.overrides)} override rules")
 
         for i, override in enumerate(self.config.overrides):
             logger.info(
@@ -75,18 +75,18 @@ class ModelRouter:
 
             if self._matches_override_condition(override.when, headers, request_data):
                 provider, model = self._parse_provider_model(override.model)
-                logger.info(
+                logger.debug(
                     f"Override rule {i + 1} MATCHED", provider=provider, model=model
                 )
                 return RouterDecision(
                     target=provider,
                     model=model,
-                    reasoning=f"Override rule {i + 1} matched: {override.when}",
+                    reason=f"Override rule {i + 1} matched: {override.when}",
                 )
             else:
-                logger.info(f"Override rule {i + 1} did NOT match")
+                logger.debug(f"Override rule {i + 1} did NOT match")
 
-        logger.info("No override rules matched")
+        logger.debug("No override rules matched")
         return None
 
     def _matches_override_condition(
@@ -97,12 +97,12 @@ class ModelRouter:
     ) -> bool:
         """Check if override condition matches current request."""
 
-        logger.info("Checking condition", condition=condition)
+        logger.debug("Checking condition", condition=condition)
 
         # Check header conditions
         if "header" in condition:
             header_conditions = condition["header"]
-            logger.info(
+            logger.debug(
                 "Checking header conditions", header_conditions=header_conditions
             )
 
@@ -127,7 +127,7 @@ class ModelRouter:
         # Check request data conditions
         if "request" in condition:
             request_conditions = condition["request"]
-            logger.info(
+            logger.debug(
                 "Checking request conditions", request_conditions=request_conditions
             )
 
@@ -157,31 +157,31 @@ class ModelRouter:
                 elif field_name == "model":
                     # Exact model match
                     actual_value = request_data.get(field_name, "")
-                    logger.info(
+                    logger.debug(
                         "Model exact check",
                         expected=expected_value,
                         actual=actual_value,
                     )
 
                     if actual_value.lower() != expected_value.lower():
-                        logger.info("Model exact condition failed")
+                        logger.debug("Model exact condition failed")
                         return False
 
                 elif field_name == "has_tool":
                     # Check if request contains specific tool
                     has_tool = self._has_tool(request_data, expected_value)
-                    logger.info(
+                    logger.debug(
                         "Tool check", tool_name=expected_value, has_tool=has_tool
                     )
 
                     if not has_tool:
-                        logger.info("Tool condition failed")
+                        logger.debug("Tool condition failed")
                         return False
 
                 else:
                     # Standard equality check
                     actual_value = request_data.get(field_name, "")
-                    logger.info(
+                    logger.debug(
                         "Standard field check",
                         field=field_name,
                         expected=expected_value,
@@ -189,10 +189,10 @@ class ModelRouter:
                     )
 
                     if actual_value != expected_value:
-                        logger.info("Standard field condition failed")
+                        logger.debug("Standard field condition failed")
                         return False
 
-        logger.info("All conditions passed")
+        logger.debug("All conditions passed")
         return True
 
     def _has_tool(self, request_data: dict[str, Any], tool_name: str) -> bool:

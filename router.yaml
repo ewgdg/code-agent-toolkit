@@ -2,7 +2,7 @@
 # This configuration routes Claude Code CLI traffic to appropriate endpoints
 
 router:
-  listen: "0.0.0.0:8788"
+  listen: "0.0.0.0:8787"
   original_base_url: "https://api.anthropic.com"
   openai_base_url: "https://api.openai.com"
 
@@ -12,7 +12,6 @@ router:
 openai:
   api_key_env: "OPENAI_API_KEY"
   reasoning_effort_default: "minimal"  # Cost-efficient default
-  include_summary: true
   reasoning_thresholds:
     low_max: 2048      # 1-5K tokens: simple tasks (~20% of max_tokens)
     medium_max: 8192  # 5K-15K tokens: balanced tasks (~50% of max_tokens)
@@ -36,14 +35,18 @@ overrides:
     model: "openai/gpt-5"
     
   # Route any model containing "haiku" to background model (most general first)
-  - when:
-      request:
-        model_contains: "haiku"
-        has_tool: "ExitPlanMode"
-    model: "openai/gpt-5-mini"
+  # - when:
+  #     request:
+  #       model_contains: "haiku"
+  #   model: "openai/gpt-5-mini"
     
   # Route any model containing "mini" to background model
   - when:
       request:
         model_contains: "mini"  
     model: "openai/gpt-5-mini"
+  
+  - when:
+      request:
+        model: "gpt"  
+    model: "openai/gpt-5"
