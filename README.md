@@ -24,6 +24,13 @@ uv run claude-router
 
 Point Claude Code CLI to `http://localhost:8787` to use the router.
 
+```bashrc
+claudecode() {
+    ANTHROPIC_BASE_URL="http://localhost:8787" \
+    claude "$@"
+}
+```
+
 ## Configuration
 
 Edit `config/router.yaml` to customize routing rules:
