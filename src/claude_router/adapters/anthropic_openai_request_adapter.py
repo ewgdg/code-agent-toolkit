@@ -2,8 +2,9 @@ import json
 import os
 from typing import Any
 
-import httpx
 import structlog
+from openai import AsyncOpenAI, AsyncStream
+from openai.types.responses import Response, ResponseStreamEvent
 
 from ..config import Config
 from ..router import ModelRouter
@@ -15,12 +16,11 @@ class AnthropicOpenAIRequestAdapter:
     def __init__(self, config: Config, router: ModelRouter):
         self.config = config
         self.router = router
-        self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(
-                30.0,
-                connect=self.config.timeouts_ms.connect / 1000,
-                read=self.config.timeouts_ms.read / 1000,
-            )
+        # Initialize OpenAI client with base URL and timeout
+        self.client = AsyncOpenAI(
+            base_url=f"{self.config.router.openai_base_url}/v1",
+            api_key=os.getenv(self.config.openai.api_key_env, "dummy"),
+            timeout=self.config.timeouts_ms.read / 1000,
         )
 
     async def adapt_request(
@@ -351,52 +351,28 @@ class AnthropicOpenAIRequestAdapter:
 
     async def make_request(
         self, openai_request: dict[str, Any], headers: dict[str, str]
-    ) -> httpx.Response:
-        """Make request to OpenAI API."""
+    ) -> Response | AsyncStream[ResponseStreamEvent]:
+        """Make request to OpenAI API using SDK."""
 
-        # Get API key (case-insensitive lookup handled by _get_api_key)
-        api_key = self._get_api_key(headers)
-        if not api_key:
-            raise ValueError("OpenAI API key not found")
-
-        request_headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-
-        # If streaming, OpenAI Responses uses server-sent events
-        if openai_request.get("stream"):
-            request_headers["Accept"] = "text/event-stream"
-
-        # Pass through request ID if present (case-insensitive lookup).
+        # Set extra headers for request ID if present
+        extra_headers = {}
         lower_headers = {k.lower(): v for k, v in headers.items()}
         if "x-request-id" in lower_headers:
-            request_id = lower_headers["x-request-id"]
-            request_headers["x-request-id"] = request_id
-
-        url = f"{self.config.router.openai_base_url}/v1/responses"
+            extra_headers["x-request-id"] = lower_headers["x-request-id"]
 
         logger.info(
             "Making OpenAI request",
-            url=url,
             model=openai_request.get("model"),
             stream=openai_request.get("stream", False),
         )
 
-        # Debug: Log the full request being sent but avoid leaking secrets
-        # logger.debug("Full OpenAI request", request=openai_request)
-
-        response = await self.client.post(
-            url, headers=request_headers, json=openai_request
+        # Use OpenAI SDK's responses.create method
+        response = await self.client.responses.create(
+            extra_headers=extra_headers, **openai_request
         )
 
         return response
 
-    def _get_api_key(self, headers: dict[str, str]) -> str | None:
-        """Get OpenAI API key from environment only."""
-        # Always use environment variable, ignore any header-based keys
-        return os.getenv(self.config.openai.api_key_env)
-
     async def close(self) -> None:
-        """Close HTTP client."""
-        await self.client.aclose()
+        """Close OpenAI client."""
+        await self.client.close()

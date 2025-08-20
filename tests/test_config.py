@@ -5,7 +5,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from src.router.config import Config, ConfigLoader
+from src.claude_router.config import Config, ConfigLoader
 
 
 class TestConfig:

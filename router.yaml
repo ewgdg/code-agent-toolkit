@@ -6,8 +6,6 @@ router:
   original_base_url: "https://api.anthropic.com"
   openai_base_url: "https://api.openai.com"
 
-
-
 # OpenAI configuration
 openai:
   api_key_env: "OPENAI_API_KEY"
@@ -32,7 +30,7 @@ overrides:
   - when:
       request:
         user_regex: '<system-reminder>[\s\S]*\b(?:plan mode is (?:activated|active|triggered|on)|in plan mode)\b[\s\S]*</system-reminder>'
-    model: "openai/gpt-5?reasoning.effort=high&reasoning.summary=auto"
+    model: "openai/gpt-5"
     
   # Route opus model requests to powerful OpenAI model
   - when:
@@ -51,6 +49,11 @@ overrides:
       request:
         model_regex: 'mini'
     model: "openai/gpt-5-mini"
+  
+  - when:
+      request:
+        model_regex: '^gpt-high$'
+    model: "openai/gpt-5?reasoning.effort=high&reasoning.summary=auto"
   
   - when:
       request:

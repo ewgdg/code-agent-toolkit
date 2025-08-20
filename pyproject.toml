@@ -17,6 +17,7 @@ dependencies = [
     "structlog>=24.4.0",
     "watchdog>=4.0.2",
     "anthropic>=0.40.0",
+    "openai>=1",
     "python-dotenv>=1.0.0",
 ]
 
@@ -27,11 +28,11 @@ dev = [
     "pytest-cov>=5.0.0",
     "ruff>=0.6.8",
     "mypy>=1.11.2",
-    "types-PyYAML>=6.0.12.20240917",
+    "types-PyYAML>=6",
 ]
 
 [project.scripts]
-claude-router = "src.router.server:main"
+claude-router = "src.claude_router.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

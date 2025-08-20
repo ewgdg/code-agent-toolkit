@@ -1,5 +1,5 @@
 import json
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +8,9 @@ import structlog
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
+from openai import AsyncStream
+from openai.types.responses import Response as OpenAIResponse
+from openai.types.responses import ResponseStreamEvent
 
 from .adapters import (
     AnthropicOpenAIRequestAdapter,
@@ -173,7 +176,7 @@ class ProxyRouter:
             response = await self.request_adapter.make_request(openai_request, headers)
 
             # Handle streaming vs non-streaming
-            if openai_request.get("stream", False):
+            if isinstance(response, AsyncStream):
                 return await self._handle_openai_streaming(response, request_id)
             else:
                 return await self._handle_openai_non_streaming(response, request_id)
@@ -195,26 +198,14 @@ class ProxyRouter:
                 raise HTTPException(status_code=502, detail="Bad gateway")
 
     async def _handle_openai_streaming(
-        self, response: httpx.Response, request_id: str
+        self, openai_stream: AsyncIterator[ResponseStreamEvent], request_id: str
     ) -> StreamingResponse:
         """Handle streaming OpenAI response."""
-
-        if response.status_code != 200:
-            logger.error(
-                "OpenAI API error",
-                request_id=request_id,
-                status_code=response.status_code,
-                response=response.text,
-            )
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"OpenAI API error: {response.text}",
-            )
 
         async def stream_generator() -> AsyncGenerator[str, None]:
             try:
                 async for anthropic_line in self.response_adapter.adapt_stream(
-                    response.aiter_lines()
+                    openai_stream
                 ):
                     yield anthropic_line
             except Exception as e:
@@ -228,25 +219,12 @@ class ProxyRouter:
         )
 
     async def _handle_openai_non_streaming(
-        self, response: httpx.Response, request_id: str
+        self, openai_response: OpenAIResponse, request_id: str
     ) -> Response:
         """Handle non-streaming OpenAI response."""
 
-        if response.status_code != 200:
-            logger.error(
-                "OpenAI API error",
-                request_id=request_id,
-                status_code=response.status_code,
-                response=response.text,
-            )
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"OpenAI API error: {response.text}",
-            )
-
         # Translate response
-        openai_data = response.json()
-        anthropic_response = await self.response_adapter.adapt_response(openai_data)
+        anthropic_response = await self.response_adapter.adapt_response(openai_response)
 
         return Response(
             content=json.dumps(anthropic_response),

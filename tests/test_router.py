@@ -1,6 +1,6 @@
-from src.router.config import Config
-from src.router.config.schema import OverrideRule
-from src.router.router import ModelRouter
+from src.claude_router.config import Config
+from src.claude_router.config.schema import OverrideRule
+from src.claude_router.router import ModelRouter
 
 
 class TestModelRouter:

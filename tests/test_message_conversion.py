@@ -2,11 +2,11 @@ import json
 
 import pytest
 
-from src.router.adapters.anthropic_openai_request_adapter import (
+from src.claude_router.adapters.anthropic_openai_request_adapter import (
     AnthropicOpenAIRequestAdapter,
 )
-from src.router.config import Config
-from src.router.router import ModelRouter
+from src.claude_router.config import Config
+from src.claude_router.router import ModelRouter
 
 
 class TestMessageConversion:
