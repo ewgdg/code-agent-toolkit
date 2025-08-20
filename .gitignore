@@ -83,3 +83,9 @@ logs/
 
 # uv
 .uv/
+
+# Ignore Claude metadata file
+.claude/
+
+# Ruff cache
+.ruff_cache/
