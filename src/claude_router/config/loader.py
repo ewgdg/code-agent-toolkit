@@ -27,10 +27,8 @@ class ConfigReloadHandler(FileSystemEventHandler):
 
 
 class ConfigLoader:
-    def __init__(
-        self, config_path: Path | None = None, enable_hot_reload: bool = False
-    ):
-        self.config_path = config_path or Path("router.yaml")
+    def __init__(self, config_path: Path, enable_hot_reload: bool = False):
+        self.config_path = config_path
         self.enable_hot_reload = enable_hot_reload
         self._config: Config | None = None
         self._last_modified: float | None = None

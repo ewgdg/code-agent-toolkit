@@ -36,7 +36,7 @@ logger = structlog.get_logger(__name__)
 
 
 class ProxyRouter:
-    def __init__(self, config_path: Path | None = None):
+    def __init__(self, config_path: Path):
         self.config_loader = ConfigLoader(config_path, enable_hot_reload=True)
         self.config = self.config_loader.get_config()
 
@@ -349,8 +349,8 @@ def main() -> None:
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path("router.yaml"),
-        help="Path to configuration file (default: router.yaml)",
+        default=Path("config/router.yaml"),
+        help="Path to configuration file (default: config/router.yaml)",
     )
     parser.add_argument(
         "--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)"

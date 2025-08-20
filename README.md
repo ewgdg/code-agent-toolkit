@@ -26,7 +26,7 @@ Point Claude Code CLI to `http://localhost:8787` to use the router.
 
 ## Configuration
 
-Edit `router.yaml` to customize routing rules:
+Edit `config/router.yaml` to customize routing rules:
 
 ```yaml
 overrides:
