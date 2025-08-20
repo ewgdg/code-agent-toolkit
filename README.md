@@ -47,7 +47,10 @@ overrides:
 ## Development
 
 ```bash
-uv run pytest              # Tests
-uv run mypy src/          # Type check  
-uv run ruff check src/    # Lint
+# Tests
+uv run pytest
+# Type check
+uv run mypy src/
+# Lint
+uv run ruff check src/
 ```
