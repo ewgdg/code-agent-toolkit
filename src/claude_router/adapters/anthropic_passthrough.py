@@ -35,9 +35,8 @@ class PassthroughAdapter:
         # Forward all headers for true passthrough transparency
         forwarded_headers = dict(headers)
 
-        # Remove problematic headers that should not be forwarded
-        # Only remove 'host' since we're forwarding to a different server
-        forwarded_headers.pop("host", None)
+        # Strip hop-by-hop headers that should not be forwarded between proxies
+        forwarded_headers = self._strip_hop_by_hop_headers(forwarded_headers)
 
         # Sanitize sensitive headers for logging only
         safe_headers = self._sanitize_headers_for_logging(forwarded_headers)
@@ -77,6 +76,43 @@ class PassthroughAdapter:
 
         return sanitized
 
+    def _strip_hop_by_hop_headers(self, headers: dict[str, str]) -> dict[str, str]:
+        """Strip hop-by-hop headers that should not be forwarded between proxies.
+
+        Based on RFC 7230 Section 6.1, these headers are meant for single-hop
+        connections and can cause issues when proxying requests.
+        """
+        # Standard hop-by-hop headers defined in RFC 7230
+        hop_by_hop_headers = {
+            "connection",
+            "keep-alive",
+            "proxy-authenticate",
+            "proxy-authorization",
+            "te",
+            "trailers",
+            "transfer-encoding",
+            "upgrade",
+            "host",  # Host header should point to the target server
+        }
+
+        # Additional headers that are commonly problematic in proxy scenarios
+        proxy_headers = {
+            "proxy-connection",  # Non-standard but used by some clients
+            "content-length",    # Let httpx handle this automatically
+            "content-encoding",  # Let httpx handle compression
+        }
+
+        # Combine all headers to strip
+        headers_to_strip = hop_by_hop_headers | proxy_headers
+
+        # Filter out hop-by-hop headers (case-insensitive)
+        filtered_headers = {}
+        for name, value in headers.items():
+            if name.lower() not in headers_to_strip:
+                filtered_headers[name] = value
+
+        return filtered_headers
+
     async def stream_response(self, response: httpx.Response) -> AsyncIterator[bytes]:
         """Stream response from Anthropic API."""
 
@@ -84,8 +120,9 @@ class PassthroughAdapter:
             yield chunk
 
     async def get_response_headers(self, response: httpx.Response) -> dict[str, str]:
-        """Get all response headers for true passthrough transparency."""
-        return dict(response.headers)
+        """Get filtered response headers, stripping hop-by-hop headers."""
+        raw_headers = dict(response.headers)
+        return self._strip_hop_by_hop_headers(raw_headers)
 
     async def close(self) -> None:
         """Close HTTP client."""
