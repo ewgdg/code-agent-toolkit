@@ -240,33 +240,20 @@ class ProxyRouter:
         body: bytes,
         query_params: dict[str, str],
         request_id: str,
-    ) -> Response:
+    ) -> StreamingResponse:
         """Handle request passed through to Anthropic."""
 
         try:
-            # Forward request
-            response = await self.passthrough_adapter.forward_request(
+            # Forward request - always returns StreamingResponse now
+            streaming_response = await self.passthrough_adapter.forward_request(
                 method, f"/{path}", headers, body, query_params
             )
-
-            # Get filtered response headers
-            response_headers = await self.passthrough_adapter.get_response_headers(
-                response
-            )
-            response_headers["x-request-id"] = request_id
-
-            # Handle streaming vs non-streaming
-            content_type = response.headers.get("content-type", "")
-            if "text/event-stream" in content_type:
-                return await self._handle_passthrough_streaming(
-                    response, response_headers
-                )
-            else:
-                return Response(
-                    content=response.content,
-                    status_code=response.status_code,
-                    headers=response_headers,
-                )
+            
+            # Add request ID to headers
+            if hasattr(streaming_response, 'headers') and streaming_response.headers:
+                streaming_response.headers["x-request-id"] = request_id
+            
+            return streaming_response
 
         except Exception as e:
             logger.error(
@@ -281,21 +268,6 @@ class ProxyRouter:
             else:
                 raise HTTPException(status_code=502, detail="Bad gateway")
 
-    async def _handle_passthrough_streaming(
-        self, response: httpx.Response, response_headers: dict[str, str]
-    ) -> StreamingResponse:
-        """Handle streaming passthrough response."""
-
-        async def stream_generator() -> AsyncGenerator[bytes, None]:
-            async for chunk in self.passthrough_adapter.stream_response(response):
-                yield chunk
-
-        return StreamingResponse(
-            stream_generator(),
-            status_code=response.status_code,
-            headers=response_headers,
-            media_type=response.headers.get("content-type", "text/event-stream"),
-        )
 
     async def startup(self) -> None:
         """Startup tasks."""

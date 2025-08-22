@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 import structlog
+from fastapi.responses import StreamingResponse
 
 from ..config import Config
 
@@ -26,8 +27,8 @@ class PassthroughAdapter:
         headers: dict[str, str],
         body: bytes,
         query_params: dict[str, str],
-    ) -> httpx.Response:
-        """Forward request to original Anthropic endpoint with headers intact."""
+    ) -> StreamingResponse:
+        """Forward request to original Anthropic endpoint with streaming."""
 
         # Build target URL
         url = f"{self.config.router.original_base_url}{path}"
@@ -47,8 +48,8 @@ class PassthroughAdapter:
             headers=list(safe_headers.keys()),
         )
 
-        # Make the request
-        response = await self.client.request(
+        # Build request for streaming
+        request = self.client.build_request(
             method=method,
             url=url,
             headers=forwarded_headers,
@@ -56,7 +57,14 @@ class PassthroughAdapter:
             params=query_params,
         )
 
-        return response
+        # Send with streaming enabled - never buffer upstream
+        response = await self.client.send(request, stream=True)
+
+        return StreamingResponse(
+            self._stream_generator(response),
+            media_type=response.headers.get("content-type", "text/plain"),
+            headers=self._filter_headers(response.headers),
+        )
 
     def _sanitize_headers_for_logging(self, headers: dict[str, str]) -> dict[str, str]:
         """Sanitize headers by redacting sensitive values for logging."""
@@ -122,6 +130,22 @@ class PassthroughAdapter:
     async def get_response_headers(self, response: httpx.Response) -> dict[str, str]:
         """Get filtered response headers, stripping hop-by-hop headers."""
         raw_headers = dict(response.headers)
+        return self._strip_hop_by_hop_headers(raw_headers)
+
+    async def _stream_generator(self, response: httpx.Response) -> AsyncIterator[bytes]:
+        """Generate streaming response chunks."""
+        try:
+            async for chunk in response.aiter_bytes():
+                if chunk:
+                    yield chunk
+        finally:
+            if not response.is_closed:
+                await response.aclose()
+
+    def _filter_headers(self, headers: httpx.Headers) -> dict[str, str]:
+        """Filter response headers for streaming response."""
+        # Convert to dict and strip hop-by-hop headers
+        raw_headers = dict(headers)
         return self._strip_hop_by_hop_headers(raw_headers)
 
     async def close(self) -> None:
