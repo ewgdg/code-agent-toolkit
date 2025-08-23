@@ -64,6 +64,7 @@ class PassthroughAdapter:
             self._stream_generator(response),
             media_type=response.headers.get("content-type", "text/plain"),
             headers=self._filter_headers(response.headers),
+            status_code=response.status_code,
         )
 
     def _sanitize_headers_for_logging(self, headers: dict[str, str]) -> dict[str, str]:
@@ -106,7 +107,7 @@ class PassthroughAdapter:
         # Additional headers that are commonly problematic in proxy scenarios
         proxy_headers = {
             "proxy-connection",  # Non-standard but used by some clients
-            "content-length",    # Let httpx handle this automatically
+            "content-length",  # Let httpx handle this automatically
             "content-encoding",  # Let httpx handle compression
         }
 
