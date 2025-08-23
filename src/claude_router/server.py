@@ -7,6 +7,7 @@ import httpx
 import structlog
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from openai import AsyncStream
 from openai.types.responses import Response as OpenAIResponse
@@ -51,6 +52,15 @@ class ProxyRouter:
             title="Claude Code Model Router",
             description="Proxy router for Claude Code CLI traffic with OpenAI",
             version="1.0.0",
+        )
+
+        # Add CORS middleware - allow all origins
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
         )
 
         # Add routes
