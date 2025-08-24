@@ -89,3 +89,5 @@ logs/
 
 # Ruff cache
 .ruff_cache/
+
+tasks

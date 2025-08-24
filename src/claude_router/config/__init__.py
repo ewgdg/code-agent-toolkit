@@ -1,4 +1,4 @@
 from .loader import ConfigLoader
-from .schema import Config
+from .schema import Config, ProviderConfig
 
-__all__ = ["Config", "ConfigLoader"]
+__all__ = ["Config", "ConfigLoader", "ProviderConfig"]

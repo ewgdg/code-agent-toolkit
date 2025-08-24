@@ -16,11 +16,15 @@ class RouterDecision:
         model: str,
         reason: str = "",
         model_config: dict[str, Any] | None = None,
+        provider: str | None = None,
+        adapter: str | None = None,
     ):
-        self.target = target  # "openai" or "anthropic"
-        self.model = model  # OpenAI model to use if target is "openai"
+        self.target = target  # "openai" or "anthropic" (kept for backward compat)
+        self.model = model  # Model to use
         self.reason = reason
         self.model_config = model_config or {}  # Model config from query params
+        self.provider = provider or target  # Provider name, defaults to target
+        self.adapter = adapter  # Adapter type
 
 
 class ModelRouter:
@@ -66,6 +70,8 @@ class ModelRouter:
             target="anthropic",
             model="passthrough",
             reason="No routing rules matched, using passthrough",
+            provider="anthropic",
+            adapter="anthropic-passthrough",
         )
 
     def _check_overrides(
@@ -83,20 +89,33 @@ class ModelRouter:
             )
 
             if self._matches_override_condition(override, headers, request_data):
-                provider, model, model_config = self._parse_provider_model(
-                    override.model
-                )
+                # Resolve provider: explicit rule provider > parsed provider prefix > "anthropic"
+                if override.provider:
+                    resolved_provider = override.provider
+                    model = override.model
+                    model_config: dict[str, Any] = {}
+                else:
+                    resolved_provider, model, model_config = self._parse_provider_model(
+                        override.model
+                    )
+
+                # Look up adapter from provider config
+                adapter = self._resolve_adapter(resolved_provider)
+
                 logger.debug(
                     f"Override rule {i + 1} MATCHED",
-                    provider=provider,
+                    provider=resolved_provider,
                     model=model,
+                    adapter=adapter,
                     model_config=model_config,
                 )
                 return RouterDecision(
-                    target=provider,
+                    target=resolved_provider,
                     model=model,
                     reason=f"Override rule {i + 1} matched: {override.when}",
                     model_config=model_config,
+                    provider=resolved_provider,
+                    adapter=adapter,
                 )
             else:
                 logger.debug(f"Override rule {i + 1} did NOT match")
@@ -466,3 +485,25 @@ class ModelRouter:
                     user_parts.append(block)
 
         return user_parts
+
+    def _resolve_adapter(self, provider: str) -> str:
+        """
+        Resolve adapter type for a given provider.
+        
+        Returns the adapter type from provider config, or default based on provider name.
+        """
+        # Look up in provider config first
+        if provider in self.config.providers:
+            return self.config.providers[provider].adapter
+
+        # Default adapters for known providers
+        if provider == "anthropic":
+            return "anthropic-passthrough"
+        elif provider == "openai":
+            return "openai-responses"
+        else:
+            # For unknown providers, assume they're OpenAI-compatible
+            logger.warning(
+                f"Unknown provider '{provider}', defaulting to openai-chat-completions adapter"
+            )
+            return "openai-chat-completions"

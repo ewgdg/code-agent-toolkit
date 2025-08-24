@@ -17,8 +17,12 @@ class AnthropicOpenAIRequestAdapter:
         self.config = config
         self.router = router
         # Initialize OpenAI client with base URL and timeout
+        # Use the openai provider config if available, otherwise fallback to default
+        openai_provider = self.config.providers.get("openai")
+        base_url = openai_provider.base_url if openai_provider else "https://api.openai.com/v1"
+
         self.client = AsyncOpenAI(
-            base_url=f"{self.config.router.openai_base_url}/v1",
+            base_url=base_url,
             api_key=os.getenv(self.config.openai.api_key_env, "dummy"),
             timeout=self.config.timeouts_ms.read / 1000,
         )
@@ -325,17 +329,15 @@ class AnthropicOpenAIRequestAdapter:
 
     def _supports_reasoning(self, model: str) -> bool:
         """Check if the model supports reasoning parameters.
-
-        This is intentionally conservative: prefer explicit model hints from the router
-        when available. Defaults to False if model is None or unlikely to match.
+        
+        Uses configured reasoning model prefixes from OpenAI configuration.
         """
         if not model:
             return False
         model_lower = model.lower()
-        # Common explicit matches: gpt-5 family, "o4" or "o" style models used by OpenAI
-        common_prefixes = ("gpt-5", "o4", "o")
+        reasoning_prefixes = self.config.openai.reasoning_model_prefixes
         return (
-            any(model_lower.startswith(p) for p in common_prefixes)
+            any(model_lower.startswith(prefix.lower()) for prefix in reasoning_prefixes)
             and "-chat" not in model_lower
         )
 

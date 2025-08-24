@@ -3,19 +3,21 @@ from collections.abc import AsyncGenerator, AsyncIterator
 from pathlib import Path
 from typing import Any
 
-import httpx
 import structlog
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from openai import AsyncStream
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from openai.types.responses import Response as OpenAIResponse
 from openai.types.responses import ResponseStreamEvent
 
 from .adapters import (
     AnthropicOpenAIRequestAdapter,
+    ChatCompletionsAnthropicResponseAdapter,
     OpenAIAnthropicResponseAdapter,
+    OpenAIChatCompletionsRequestAdapter,
     PassthroughAdapter,
 )
 from .config import ConfigLoader
@@ -43,8 +45,12 @@ class ProxyRouter:
 
         # Initialize components
         self.router = ModelRouter(self.config)
-        self.request_adapter = AnthropicOpenAIRequestAdapter(self.config, self.router)
-        self.response_adapter = OpenAIAnthropicResponseAdapter(self.config)
+
+        # Initialize adapters
+        self.openai_request_adapter = AnthropicOpenAIRequestAdapter(self.config, self.router)
+        self.openai_response_adapter = OpenAIAnthropicResponseAdapter(self.config)
+        self.chat_completions_request_adapter = OpenAIChatCompletionsRequestAdapter(self.config, self.router)
+        self.chat_completions_response_adapter = ChatCompletionsAnthropicResponseAdapter()
         self.passthrough_adapter = PassthroughAdapter(self.config)
 
         # Setup FastAPI app
@@ -139,12 +145,18 @@ class ProxyRouter:
                 request_id=request_id,
                 target=decision.target,
                 model=decision.model,
+                provider=decision.provider,
+                adapter=decision.adapter,
                 reason=decision.reason,
                 model_config=decision.model_config,
             )
 
-            # Route request
-            if decision.target == "openai":
+            # Route request based on adapter type
+            if decision.adapter == "anthropic-passthrough":
+                return await self._handle_passthrough_request(
+                    method, path, headers, body, query_params, request_id
+                )
+            elif decision.adapter == "openai-responses":
                 return await self._handle_openai_request(
                     request_data,
                     decision.model,
@@ -152,10 +164,16 @@ class ProxyRouter:
                     headers,
                     request_id,
                 )
-            else:
-                return await self._handle_passthrough_request(
-                    method, path, headers, body, query_params, request_id
+            elif decision.adapter == "openai-chat-completions":
+                return await self._handle_openai_chat_completions_request(
+                    request_data,
+                    decision,
+                    headers,
+                    request_id,
                 )
+            else:
+                logger.error(f"Unknown adapter type: {decision.adapter}")
+                raise HTTPException(status_code=500, detail="Unknown adapter type")
 
         except Exception as e:
             logger.error(
@@ -178,12 +196,12 @@ class ProxyRouter:
 
         try:
             # Translate request
-            openai_request = await self.request_adapter.adapt_request(
+            openai_request = await self.openai_request_adapter.adapt_request(
                 request_data, target_model, model_config
             )
 
             # Make OpenAI request
-            response = await self.request_adapter.make_request(openai_request, headers)
+            response = await self.openai_request_adapter.make_request(openai_request, headers)
 
             # Handle streaming vs non-streaming
             if isinstance(response, AsyncStream):
@@ -214,7 +232,7 @@ class ProxyRouter:
 
         async def stream_generator() -> AsyncGenerator[str, None]:
             try:
-                async for anthropic_line in self.response_adapter.adapt_stream(
+                async for anthropic_line in self.openai_response_adapter.adapt_stream(
                     openai_stream
                 ):
                     yield anthropic_line
@@ -234,7 +252,94 @@ class ProxyRouter:
         """Handle non-streaming OpenAI response."""
 
         # Translate response
-        anthropic_response = await self.response_adapter.adapt_response(openai_response)
+        anthropic_response = await self.openai_response_adapter.adapt_response(openai_response)
+
+        return Response(
+            content=json.dumps(anthropic_response),
+            media_type="application/json",
+            headers={"x-request-id": request_id},
+        )
+
+    async def _handle_openai_chat_completions_request(
+        self,
+        request_data: dict[str, Any],
+        decision: Any,  # RouterDecision
+        headers: dict[str, str],
+        request_id: str,
+    ) -> Response:
+        """Handle request routed to OpenAI Chat Completions API."""
+
+        try:
+            # Get provider config
+            provider_config = self.config.providers.get(decision.provider)
+            if not provider_config:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Provider '{decision.provider}' not configured"
+                )
+
+            # Translate request
+            openai_request = self.chat_completions_request_adapter.adapt_request(
+                request_data, provider_config, decision.model, decision.model_config
+            )
+
+            # Make request
+            response = await self.chat_completions_request_adapter.make_request(
+                openai_request, provider_config, headers
+            )
+
+            # Handle streaming vs non-streaming
+            is_streaming = openai_request.get("stream", False)
+
+            if is_streaming:
+                return await self._handle_chat_completions_streaming(response, request_id)
+            else:
+                return await self._handle_chat_completions_non_streaming(response, request_id)
+
+        except Exception as e:
+            logger.error(
+                "OpenAI Chat Completions request error",
+                request_id=request_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+
+            # Map common errors to appropriate HTTP status codes
+            if "api key" in str(e).lower():
+                raise HTTPException(status_code=401, detail="Invalid API key")
+            elif "timeout" in str(e).lower():
+                raise HTTPException(status_code=504, detail="Gateway timeout")
+            else:
+                raise HTTPException(status_code=502, detail="Bad gateway")
+
+    async def _handle_chat_completions_streaming(
+        self, openai_stream: AsyncStream[ChatCompletionChunk], request_id: str
+    ) -> StreamingResponse:
+        """Handle streaming Chat Completions response."""
+
+        async def stream_generator() -> AsyncGenerator[str, None]:
+            try:
+                async for anthropic_line in self.chat_completions_response_adapter.adapt_stream(
+                    openai_stream
+                ):
+                    yield anthropic_line
+            except Exception as e:
+                logger.error("Chat Completions streaming error", request_id=request_id, error=str(e))
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+        return StreamingResponse(
+            stream_generator(),
+            media_type="text/event-stream",
+            headers={"x-request-id": request_id},
+        )
+
+    async def _handle_chat_completions_non_streaming(
+        self, openai_response: ChatCompletion, request_id: str
+    ) -> Response:
+        """Handle non-streaming Chat Completions response."""
+
+        # Translate response
+        anthropic_response = self.chat_completions_response_adapter.adapt_response(openai_response)
 
         return Response(
             content=json.dumps(anthropic_response),
@@ -258,11 +363,11 @@ class ProxyRouter:
             streaming_response = await self.passthrough_adapter.forward_request(
                 method, f"/{path}", headers, body, query_params
             )
-            
+
             # Add request ID to headers
             if hasattr(streaming_response, 'headers') and streaming_response.headers:
                 streaming_response.headers["x-request-id"] = request_id
-            
+
             return streaming_response
 
         except Exception as e:
@@ -292,7 +397,7 @@ class ProxyRouter:
         logger.info("Shutting down Claude Code Model Router")
 
         # Close adapters
-        await self.request_adapter.close()
+        await self.openai_request_adapter.close()
         await self.passthrough_adapter.close()
 
         # Stop config hot reload

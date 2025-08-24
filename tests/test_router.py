@@ -1,5 +1,5 @@
 from src.claude_router.config import Config
-from src.claude_router.config.schema import OverrideRule
+from src.claude_router.config.schema import OverrideRule, ProviderConfig
 from src.claude_router.router import ModelRouter
 
 
@@ -630,3 +630,85 @@ class TestModelRouter:
 
         assert decision.target == "openai"
         assert decision.model == "gpt-4o-mini"
+
+    def test_provider_based_routing(self):
+        """Test new provider-based routing with explicit provider field."""
+        # Configure a custom provider
+        self.config.providers = {
+            "llama-local": ProviderConfig(
+                base_url="http://localhost:8080/v1",
+                adapter="openai-chat-completions",
+                api_key_env="LLAMA_API_KEY"
+            )
+        }
+
+        # Add override rule with explicit provider
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"model_regex": "llama"}},
+                model="llama3.1",
+                provider="llama-local"
+            )
+        ]
+
+        headers = {}
+        request_data = {"model": "llama-latest"}
+
+        decision = self.router.decide_route(headers, request_data)
+
+        assert decision.target == "llama-local"
+        assert decision.model == "llama3.1"
+        assert decision.provider == "llama-local"
+        assert decision.adapter == "openai-chat-completions"
+        assert "override rule 1 matched" in decision.reason.lower()
+
+    def test_provider_resolution_from_model_prefix(self):
+        """Test provider resolution from model prefix when no explicit provider."""
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"model_regex": "test"}},
+                model="openai/gpt-4o"
+            )
+        ]
+
+        headers = {}
+        request_data = {"model": "test-model"}
+
+        decision = self.router.decide_route(headers, request_data)
+
+        assert decision.target == "openai"
+        assert decision.model == "gpt-4o"
+        assert decision.provider == "openai"
+        assert decision.adapter == "openai-responses"  # default for openai
+
+    def test_provider_unknown_defaults_to_chat_completions(self):
+        """Test that unknown providers default to openai-chat-completions adapter."""
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"model_regex": "test"}},
+                model="unknown-model",
+                provider="unknown-provider"
+            )
+        ]
+
+        headers = {}
+        request_data = {"model": "test-model"}
+
+        decision = self.router.decide_route(headers, request_data)
+
+        assert decision.target == "unknown-provider"
+        assert decision.model == "unknown-model"
+        assert decision.provider == "unknown-provider"
+        assert decision.adapter == "openai-chat-completions"  # default for unknown
+
+    def test_default_anthropic_passthrough_fields(self):
+        """Test default routing includes correct provider and adapter fields."""
+        headers = {}
+        request_data = {"model": "claude-3-sonnet"}
+
+        decision = self.router.decide_route(headers, request_data)
+
+        assert decision.target == "anthropic"
+        assert decision.model == "passthrough"
+        assert decision.provider == "anthropic"
+        assert decision.adapter == "anthropic-passthrough"
