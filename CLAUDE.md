@@ -147,3 +147,8 @@ The server dispatches requests to different handlers based on the adapter type:
 - `_handle_passthrough_request()` for Anthropic passthrough
 - `_handle_openai_request()` for OpenAI Responses API
 - `_handle_openai_chat_completions_request()` for OpenAI Chat Completions API
+
+- ## Typing Rules
+- Always do typing.
+- Prefer `T1|T2` over `Union[T1,T2]`
+- Avoid `Any` if possible
