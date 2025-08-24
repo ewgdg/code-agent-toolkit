@@ -1,0 +1,92 @@
+# Example configuration showing model config overrides with granular priority support
+
+router:
+  listen: "0.0.0.0:8787"
+  original_base_url: "https://api.anthropic.com"
+
+providers:
+  openai:
+    base_url: "https://api.openai.com/v1"
+    adapter: "openai-responses"
+    api_key_env: "OPENAI_API_KEY"
+
+openai:
+  reasoning_effort_default: "minimal"
+  reasoning_thresholds:
+    low_max: 2048
+    medium_max: 8192
+
+overrides:
+  # Example 1: Mixed priority configuration for gpt-5 models
+  # Direct values use default priority, ModelConfigEntry objects can specify priority
+  - when:
+      request:
+        model_regex: "gpt-5"
+    provider: "openai"
+    model: "gpt-5"
+    config:
+        reasoning:
+          effort: "low"  # default priority - only set if not already present
+          summary: 
+            value: "detailed"  # always override existing summary setting
+            priority: "always"
+        temperature: 0.7  # default priority
+        max_tokens:
+          value: 4000  # always override max_tokens
+          priority: "always"
+
+  # Example 2: Fine-grained control for haiku models
+  # Some parameters force override, others use defaults
+  - when:
+      request:
+        model_regex: "haiku"
+    provider: "openai"
+    model: "gpt-4o-mini"
+    config:
+        temperature:
+          value: 0.3
+          priority: "always"  # Force low temperature for consistency
+        max_tokens: 1000  # default priority - don't override if already set
+        reasoning:
+          summary: "brief"  # default priority
+          effort:
+            value: "low" 
+            priority: "always"  # Always use low effort for haiku
+
+  # Example 3: Code generation optimization
+  # Always enforce specific settings for code generation tasks
+  - when:
+      header:
+        X-Task-Type: "code-generation"
+    provider: "openai"
+    model: "gpt-5"
+    config:
+        temperature:
+          value: 0.1
+          priority: "always"  # Force low temperature for deterministic code
+        reasoning:
+          effort: "medium"  # default priority - allow override if specified
+          summary:
+            value: "none"
+            priority: "always"  # Never include reasoning summary in code gen
+
+  # Example 4: Default fallback configuration
+  # All default priority - won't override existing values
+  - when:
+      request:
+        model_regex: "claude.*opus"
+    provider: "openai"
+    model: "gpt-5"
+    config:
+        reasoning:
+          effort: "high"
+          summary: "detailed"
+        temperature: 0.8
+        max_tokens: 8000
+
+timeouts_ms:
+  connect: 10000
+  read: 300000
+
+logging:
+  level: "info"
