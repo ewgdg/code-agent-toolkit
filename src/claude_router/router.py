@@ -1,6 +1,5 @@
 import re
 from typing import Any
-from urllib.parse import parse_qs
 
 import structlog
 
@@ -15,16 +14,16 @@ class RouterDecision:
         target: str,
         model: str,
         reason: str = "",
-        model_config: dict[str, Any] | None = None,
         provider: str | None = None,
         adapter: str | None = None,
+        model_config: dict[str, Any] | None = None,
     ):
         self.target = target  # "openai" or "anthropic" (kept for backward compat)
         self.model = model  # Model to use
         self.reason = reason
-        self.model_config = model_config or {}  # Model config from query params
         self.provider = provider or target  # Provider name, defaults to target
         self.adapter = adapter  # Adapter type
+        self.model_config = model_config or {}  # Applied model config from overrides
 
 
 class ModelRouter:
@@ -72,6 +71,7 @@ class ModelRouter:
             reason="No routing rules matched, using passthrough",
             provider="anthropic",
             adapter="anthropic-passthrough",
+            model_config={},
         )
 
     def _check_overrides(
@@ -93,10 +93,16 @@ class ModelRouter:
                 if override.provider:
                     resolved_provider = override.provider
                     model = override.model
-                    model_config: dict[str, Any] = {}
                 else:
-                    resolved_provider, model, model_config = self._parse_provider_model(
+                    resolved_provider, model = self._parse_provider_model(
                         override.model
+                    )
+
+                # Apply model config overrides if specified
+                model_config: dict[str, Any] = {}
+                if override.config:
+                    model_config = self._apply_granular_config_overrides(
+                        model_config, override.config
                     )
 
                 # Look up adapter from provider config
@@ -107,15 +113,16 @@ class ModelRouter:
                     provider=resolved_provider,
                     model=model,
                     adapter=adapter,
-                    model_config=model_config,
+                    applied_config=model_config,
+                    config_overrides=override.config,
                 )
                 return RouterDecision(
                     target=resolved_provider,
                     model=model,
                     reason=f"Override rule {i + 1} matched: {override.when}",
-                    model_config=model_config,
                     provider=resolved_provider,
                     adapter=adapter,
+                    model_config=model_config,
                 )
             else:
                 logger.debug(f"Override rule {i + 1} did NOT match")
@@ -300,92 +307,22 @@ class ModelRouter:
 
         return tool_names
 
-    def _parse_provider_model(
-        self, provider_model_string: str
-    ) -> tuple[str, str, dict[str, Any]]:
+    def _parse_provider_model(self, provider_model_string: str) -> tuple[str, str]:
         """
-        Parse provider/model format with optional query parameters
-        and return (target, model, config).
+        Parse provider/model format and return (provider, model).
 
         Examples:
-        - "openai/gpt-5" -> ("openai", "gpt-5", {})
-        - "anthropic/claude-3-sonnet" -> ("anthropic", "claude-3-sonnet", {})
-        - "gpt-4" -> ("openai", "gpt-4", {})  # fallback to openai if no provider
-        - "openai/gpt-5?reasoning.effort=low&temperature=0.5" ->
-          ("openai", "gpt-5", {"reasoning": {"effort": "low"}, "temperature": 0.5})
+        - "openai/gpt-5" -> ("openai", "gpt-5")
+        - "anthropic/claude-3-sonnet" -> ("anthropic", "claude-3-sonnet")
+        - "gpt-4" -> ("openai", "gpt-4")  # fallback to openai if no provider
         """
-        model_config: dict[str, Any] = {}
-
-        # Check if there are query parameters
-        if "?" in provider_model_string:
-            base_model, query_string = provider_model_string.split("?", 1)
-
-            # Parse query parameters
-            query_params = parse_qs(query_string)
-
-            # Convert query parameters to nested configuration
-            for key, values in query_params.items():
-                # Use the first value if multiple values are provided
-                value = values[0] if values else ""
-
-                # Handle parameters (both nested and direct)
-                # e.g., "reasoning.effort" -> {"reasoning": {"effort": value}}
-                # e.g., "temperature" -> {"temperature": value}
-                parts = key.split(".")
-                current_dict = model_config
-
-                # Navigate through nested structure, creating dicts as needed
-                for part in parts[:-1]:
-                    if part not in current_dict:
-                        current_dict[part] = {}
-                    current_dict = current_dict[part]
-
-                # Set the final value, attempting to convert to appropriate type
-                final_key = parts[-1]
-                current_dict[final_key] = self._convert_param_value(value)
-
-            provider_model_string = base_model
-
-        # Parse provider/model as before
+        # Parse provider/model
         if "/" in provider_model_string:
             provider, model = provider_model_string.split("/", 1)
-            return provider.lower(), model, model_config
+            return provider.lower(), model
         else:
             # Fallback: assume OpenAI if no provider specified
-            return "openai", provider_model_string, model_config
-
-    def _convert_param_value(self, value: str) -> Any:
-        """
-        Convert query parameter value to appropriate Python type.
-
-        Attempts to convert strings to:
-        - int if it's a valid integer
-        - float if it's a valid float
-        - bool if it's "true"/"false" (case-insensitive)
-        - original string otherwise
-        """
-        if not value:
-            return value
-
-        # Try boolean conversion first (case-insensitive)
-        if value.lower() in ("true", "false"):
-            return value.lower() == "true"
-
-        # Try integer conversion
-        try:
-            if "." not in value:  # Only try int if no decimal point
-                return int(value)
-        except ValueError:
-            pass
-
-        # Try float conversion
-        try:
-            return float(value)
-        except ValueError:
-            pass
-
-        # Return as string if no conversion worked
-        return value
+            return "openai", provider_model_string
 
     def get_reasoning_effort(self, request_data: dict[str, Any]) -> str:
         """
@@ -508,3 +445,87 @@ class ModelRouter:
                 "openai-chat-completions adapter"
             )
             return "openai-chat-completions"
+
+
+    def _apply_granular_config_overrides(
+        self, target: dict[str, Any], source: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Apply configuration overrides with granular priority control.
+
+        Args:
+            target: Target configuration dict
+            source: Source configuration dict (may contain ModelConfigEntry objects)
+
+        Returns:
+            Updated configuration dict
+        """
+        from .config.schema import ModelConfigEntry
+
+        result = target.copy()
+
+        for key, value in source.items():
+            if isinstance(value, ModelConfigEntry):
+                # Handle ModelConfigEntry with explicit priority
+                if key not in result or value.priority == "always":
+                    result[key] = value.value
+                # If priority is "default" and key exists, keep existing value
+            elif isinstance(value, dict) and "value" in value and "priority" in value:
+                # Handle dict representation of ModelConfigEntry (from YAML)
+                if key not in result or value["priority"] == "always":
+                    result[key] = value["value"]
+                # If priority is "default" and key exists, keep existing value
+            elif (
+                isinstance(value, dict)
+                and key in result
+                and isinstance(result[key], dict)
+            ):
+                # Recursively handle nested dictionaries
+                result[key] = self._apply_granular_config_overrides(result[key], value)
+            elif isinstance(value, dict):
+                # New nested dictionary with default priority
+                if key not in result:
+                    result[key] = self._apply_granular_config_overrides({}, value)
+            else:
+                # Direct value with default priority
+                if key not in result:
+                    result[key] = value
+                # If key exists, keep existing value (default priority)
+
+        return result
+
+    def _deep_merge_configs(
+        self,
+        target: dict[str, Any],
+        source: dict[str, Any],
+        force_override: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Deep merge configuration dictionaries.
+
+        Args:
+            target: Target configuration dict (will be modified)
+            source: Source configuration dict to merge from
+            force_override: If True, override. If False, only set if missing.
+
+        Returns:
+            Merged configuration dict
+        """
+        result = target.copy()
+
+        for key, value in source.items():
+            if (
+                key in result
+                and isinstance(result[key], dict)
+                and isinstance(value, dict)
+            ):
+                # Recursively merge nested dictionaries
+                result[key] = self._deep_merge_configs(
+                    result[key], value, force_override
+                )
+            elif key not in result or force_override:
+                # Set value if key doesn't exist OR if we're forcing override
+                result[key] = value
+            # If key exists and force_override is False, keep existing value
+
+        return result

@@ -1,8 +1,9 @@
 import re
 from re import Pattern
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 
 
 class RouterConfig(BaseModel):
@@ -106,11 +107,24 @@ class ProviderConfig(BaseModel):
         return v
 
 
+class ModelConfigEntry(BaseModel):
+    """A single model configuration parameter with priority control."""
+
+    value: Any = Field(description="The configuration value")
+    priority: Literal["default", "always"] = Field(
+        default="default",
+        description="Priority: 'default' only if not set, 'always' overrides",
+    )
+
+
 class OverrideRule(BaseModel):
     when: dict[str, Any] = Field(description="Conditions for this rule")
     model: str = Field(description="Model to use when conditions match")
     provider: str | None = Field(
         default=None, description="Provider to use when conditions match"
+    )
+    config: dict[str, Any | ModelConfigEntry] | None = Field(
+        default=None, description="Model configuration overrides with priority control"
     )
     compiled_patterns: dict[str, Pattern[str]] = Field(
         default_factory=dict, exclude=True

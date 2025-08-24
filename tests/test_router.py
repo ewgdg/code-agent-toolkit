@@ -1,5 +1,9 @@
 from src.claude_router.config import Config
-from src.claude_router.config.schema import OverrideRule, ProviderConfig
+from src.claude_router.config.schema import (
+    ModelConfigEntry,
+    OverrideRule,
+    ProviderConfig,
+)
 from src.claude_router.router import ModelRouter
 
 
@@ -393,51 +397,18 @@ class TestModelRouter:
         assert decision.target == "anthropic"
         assert decision.model == "passthrough"
 
-    def test_provider_model_query_parameters(self):
-        """Test parsing model query parameters from override rules."""
-        test_cases = [
-            # Basic query parameter
-            ("openai/gpt-5?temperature=0.5", "openai", "gpt-5", {"temperature": 0.5}),
-            # Nested query parameter
-            (
-                "openai/gpt-5?reasoning.effort=low",
-                "openai",
-                "gpt-5",
-                {"reasoning": {"effort": "low"}},
-            ),
-            # Multiple parameters
-            (
-                "openai/gpt-5?reasoning.effort=high&temperature=0.3",
-                "openai",
-                "gpt-5",
-                {"reasoning": {"effort": "high"}, "temperature": 0.3},
-            ),
-            # Boolean parameter
-            ("openai/gpt-5?stream=true", "openai", "gpt-5", {"stream": True}),
-            # No query parameters
-            ("openai/gpt-5", "openai", "gpt-5", {}),
-        ]
 
-        for (
-            provider_model_string,
-            expected_provider,
-            expected_model,
-            expected_config,
-        ) in test_cases:
-            provider, model, config = self.router._parse_provider_model(
-                provider_model_string
-            )
-
-            assert provider == expected_provider
-            assert model == expected_model
-            assert config == expected_config
-
-    def test_override_rule_with_query_parameters(self):
+    def test_override_rule_with_model_config(self):
         """Test that override rules pass through model configuration."""
         self.config.overrides = [
             OverrideRule(
                 when={"header": {"X-Test": "config"}},
-                model="openai/gpt-5?reasoning.effort=high&temperature=0.2",
+                model="gpt-5",
+                provider="openai",
+                config={
+                    "reasoning": {"effort": "high"},
+                    "temperature": 0.2,
+                },
             )
         ]
 
@@ -453,23 +424,6 @@ class TestModelRouter:
             "temperature": 0.2,
         }
 
-    def test_parameter_type_conversion(self):
-        """Test automatic type conversion of query parameters."""
-        test_cases = [
-            ("temperature=0.5", 0.5),  # float
-            ("max_tokens=1000", 1000),  # int
-            ("stream=true", True),  # boolean true
-            ("stream=false", False),  # boolean false
-            ("model_name=gpt-5", "gpt-5"),  # string
-        ]
-
-        for param_string, expected_value in test_cases:
-            provider, model, config = self.router._parse_provider_model(
-                f"openai/gpt-5?{param_string}"
-            )
-            param_name = param_string.split("=")[0]
-
-            assert config[param_name] == expected_value
 
     def test_user_regex_detection(self):
         """Test routing decision for system reminder messages using user_regex."""
@@ -711,3 +665,87 @@ class TestModelRouter:
         assert decision.model == "passthrough"
         assert decision.provider == "anthropic"
         assert decision.adapter == "anthropic-passthrough"
+
+    def test_model_config_default_priority(self):
+        """Test model config with default priority."""
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"model_regex": "test"}},
+                model="openai/gpt-5",
+                model_config={
+                    "reasoning": {"effort": "low"},  # default priority
+                    "temperature": 0.3,  # default priority
+                    "max_tokens": 1000,  # default priority
+                },
+            )
+        ]
+
+        headers = {}
+        request_data = {"model": "test-model"}
+
+        decision = self.router.decide_route(headers, request_data)
+
+        assert decision.target == "openai"
+        assert decision.model == "gpt-5"
+        assert "override rule 1 matched" in decision.reason.lower()
+
+    def test_model_config_always_priority(self):
+        """Test model config with always priority using ModelConfigEntry."""
+        self.config.overrides = [
+            OverrideRule(
+                when={"request": {"model_regex": "test"}},
+                model="openai/gpt-5",
+                model_config={
+                    "reasoning": {
+                        "effort": ModelConfigEntry(value="low", priority="always"),
+                        "summary": "auto",  # default priority
+                    },
+                    "temperature": ModelConfigEntry(value=0.3, priority="always"),
+                    "max_tokens": 1000,  # default priority
+                },
+            )
+        ]
+
+        headers = {}
+        request_data = {"model": "test-model"}
+
+        decision = self.router.decide_route(headers, request_data)
+
+        assert decision.target == "openai"
+        assert decision.model == "gpt-5"
+        assert "override rule 1 matched" in decision.reason.lower()
+
+    def test_granular_config_overrides_method(self):
+        """Test the _apply_granular_config_overrides method directly."""
+        existing_config = {
+            "temperature": 0.7,
+            "reasoning": {"effort": "medium", "tokens": 1000}
+        }
+
+        override_config = {
+            "temperature": ModelConfigEntry(value=0.1, priority="always"),
+            "max_tokens": 2000,  # default priority
+            "reasoning": {
+                "effort": "high",  # default priority - should NOT override
+                "summary": "auto",  # default priority - should be added
+                "tokens": ModelConfigEntry(
+                    value=2000, priority="always"
+                )  # should override
+            }
+        }
+
+        result = self.router._apply_granular_config_overrides(
+            existing_config, override_config
+        )
+
+        expected = {
+            "temperature": 0.1,  # overridden (always priority)
+            "max_tokens": 2000,  # added (no existing value)
+            "reasoning": {
+                "effort": "medium",  # preserved (default priority, existing value)
+                "tokens": 2000,  # overridden (always priority)
+                "summary": "auto",  # added (no existing value)
+            }
+        }
+
+        assert result == expected

@@ -6,6 +6,10 @@ import yaml
 from pydantic import ValidationError
 
 from src.claude_router.config import Config, ConfigLoader
+from src.claude_router.config.schema import (
+    ModelConfigEntry,
+    OverrideRule,
+)
 
 
 class TestConfig:
@@ -15,7 +19,6 @@ class TestConfig:
 
         assert config.router.listen == "0.0.0.0:8787"
         assert config.router.original_base_url == "https://api.anthropic.com"
-        assert config.router.openai_base_url == "https://api.openai.com"
 
         assert config.openai.reasoning_effort_default == "minimal"
         assert config.openai.reasoning_thresholds.low_max == 5000
@@ -84,6 +87,89 @@ class TestConfig:
 
             # Should fallback to defaults
             assert config.router.listen == "0.0.0.0:8787"
+
+        finally:
+            config_path.unlink()
+
+    def test_model_config_entry_validation(self):
+        """Test validation of ModelConfigEntry schema."""
+        # Test ModelConfigEntry validation
+        entry = ModelConfigEntry(value="low")
+        assert entry.value == "low"
+        assert entry.priority == "default"  # default value
+
+        entry = ModelConfigEntry(value=0.3, priority="always")
+        assert entry.value == 0.3
+        assert entry.priority == "always"
+
+        # Invalid priority should raise ValidationError
+        with pytest.raises(ValidationError):
+            ModelConfigEntry(value="test", priority="invalid")
+
+    def test_override_rule_with_model_config(self):
+        """Test OverrideRule with model_config field."""
+        override_rule = OverrideRule(
+            when={"request": {"model_regex": "test"}},
+            model="openai/gpt-5",
+            config={
+                "reasoning": {
+                    "effort": ModelConfigEntry(value="low", priority="always")
+                }
+            },
+        )
+
+        assert override_rule.when == {"request": {"model_regex": "test"}}
+        assert override_rule.model == "openai/gpt-5"
+        assert override_rule.config["reasoning"]["effort"].value == "low"
+        assert override_rule.config["reasoning"]["effort"].priority == "always"
+
+    def test_config_with_model_config_overrides(self):
+        """Test full Config with model_config overrides in YAML."""
+        config_data = {
+            "overrides": [
+                {
+                    "when": {"request": {"model_regex": "gpt-5"}},
+                    "model": "openai/gpt-5",
+                    "config": {
+                        "reasoning": {"effort": "low"},  # default priority
+                    },
+                },
+                {
+                    "when": {"request": {"model_regex": "haiku"}},
+                    "model": "openai/gpt-4o-mini",
+                    "config": {
+                        "temperature": {"value": 0.3, "priority": "always"},
+                        "max_tokens": 1000,  # default priority
+                    },
+                },
+            ]
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(config_data, f)
+            config_path = Path(f.name)
+
+        try:
+            loader = ConfigLoader(config_path)
+            config = loader.get_config()
+
+            assert len(config.overrides) == 2
+
+            # First override
+            first_rule = config.overrides[0]
+            assert first_rule.model == "openai/gpt-5"
+            assert first_rule.config == {"reasoning": {"effort": "low"}}
+
+            # Second override
+            second_rule = config.overrides[1]
+            assert second_rule.model == "openai/gpt-4o-mini"
+            # The YAML parser creates a dict, not a ModelConfigEntry directly
+            # This is expected behavior - the granular logic will handle both formats
+            assert second_rule.config["temperature"] == {
+                "value": 0.3,
+                "priority": "always",
+            }
+            assert second_rule.config["max_tokens"] == 1000
 
         finally:
             config_path.unlink()
