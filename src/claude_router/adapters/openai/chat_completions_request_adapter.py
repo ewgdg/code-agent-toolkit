@@ -6,14 +6,13 @@ import structlog
 from openai import AsyncOpenAI, AsyncStream
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
-from claude_router.router import ModelRouter
-
-from ..config import Config, ProviderConfig
+from ...config import Config, ProviderConfig
+from ...router import ModelRouter
 
 logger = structlog.get_logger(__name__)
 
 
-class OpenAIChatCompletionsRequestAdapter:
+class ChatCompletionsRequestAdapter:
     """Adapter that translates Anthropic Messages API to OpenAI Chat Completions API."""
 
     def __init__(self, config: Config, router: ModelRouter):
@@ -28,7 +27,7 @@ class OpenAIChatCompletionsRequestAdapter:
         model: str,
         model_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Translate Anthropic Messages API request to OpenAI Chat Completions request."""
+        """Translate Anthropic Messages API request to OpenAI Chat Completions."""
 
         model_config = model_config or {}
 
@@ -237,7 +236,7 @@ class OpenAIChatCompletionsRequestAdapter:
         """Format tool result content for OpenAI."""
         if isinstance(content, str):
             return content
-        elif isinstance(content, (dict, list)):
+        elif isinstance(content, dict | list):
             return json.dumps(content)
         else:
             return str(content)
@@ -288,7 +287,7 @@ class OpenAIChatCompletionsRequestAdapter:
             response = await client.chat.completions.create(
                 extra_headers=extra_headers, **openai_request
             )
-            # The OpenAI SDK returns either ChatCompletion or AsyncStream[ChatCompletionChunk]
+            # The OpenAI SDK returns either ChatCompletion or AsyncStream[...]
             # based on the stream parameter, which MyPy can't infer from **kwargs
             return response  # type: ignore[no-any-return]
         finally:
@@ -296,7 +295,7 @@ class OpenAIChatCompletionsRequestAdapter:
 
     def _supports_reasoning(self, model: str) -> bool:
         """Check if the model supports reasoning parameters.
-        
+
         Uses configured reasoning model prefixes from OpenAI configuration.
         """
         if not model:

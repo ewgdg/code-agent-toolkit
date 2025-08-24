@@ -22,12 +22,12 @@ from openai.types.responses import (
 )
 from openai.types.responses.response_output_text import AnnotationURLCitation
 
-from ..config import Config
+from ...config import Config
 
 logger = structlog.get_logger(__name__)
 
 
-class OpenAIAnthropicResponseAdapter:
+class ResponsesResponseAdapter:
     def __init__(self, config: Config):
         self.config = config
 

@@ -6,20 +6,22 @@ import structlog
 from openai import AsyncOpenAI, AsyncStream
 from openai.types.responses import Response, ResponseStreamEvent
 
-from ..config import Config
-from ..router import ModelRouter
+from ...config import Config
+from ...router import ModelRouter
 
 logger = structlog.get_logger(__name__)
 
 
-class AnthropicOpenAIRequestAdapter:
+class ResponsesRequestAdapter:
     def __init__(self, config: Config, router: ModelRouter):
         self.config = config
         self.router = router
         # Initialize OpenAI client with base URL and timeout
         # Use the openai provider config if available, otherwise fallback to default
         openai_provider = self.config.providers.get("openai")
-        base_url = openai_provider.base_url if openai_provider else "https://api.openai.com/v1"
+        base_url = (
+            openai_provider.base_url if openai_provider else "https://api.openai.com/v1"
+        )
 
         self.client = AsyncOpenAI(
             base_url=base_url,
@@ -329,7 +331,7 @@ class AnthropicOpenAIRequestAdapter:
 
     def _supports_reasoning(self, model: str) -> bool:
         """Check if the model supports reasoning parameters.
-        
+
         Uses configured reasoning model prefixes from OpenAI configuration.
         """
         if not model:
@@ -373,7 +375,7 @@ class AnthropicOpenAIRequestAdapter:
             extra_headers=extra_headers, **openai_request
         )
 
-        return response
+        return response  # type: ignore[no-any-return]
 
     async def close(self) -> None:
         """Close OpenAI client."""

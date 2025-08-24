@@ -24,9 +24,9 @@ uv run pytest tests/test_router.py -v
 # Type checking
 uv run mypy src/
 
-# Linting and formatting
-uv run ruff check src/ tests/
+# Linting and formatting, try formatting first
 uv run ruff format src/ tests/
+uv run ruff check src/ tests/
 
 # Fix auto-fixable linting issues
 uv run ruff check src/ tests/ --fix
@@ -36,12 +36,13 @@ uv run ruff check src/ tests/ --fix
 
 ### Core Components
 
-- **ProxyRouter** (`src/claude_router/server.py`): Main FastAPI application that handles request routing
+- **ProxyRouter** (`src/claude_router/server.py`): Main FastAPI application that handles request routing and adapter dispatching
 - **ModelRouter** (`src/claude_router/router.py`): Decision engine that determines routing based on headers, request content, and configuration rules
-- **Request Adapters** (`src/router/adapters/`): Translate between API formats
-  - `AnthropicOpenAIRequestAdapter`: Converts Anthropic Messages API � OpenAI Chat Completions API
-  - `OpenAIAnthropicResponseAdapter`: Converts OpenAI responses � Anthropic format
+- **Provider System** (`src/claude_router/config/schema.py`): Configurable provider definitions with base URLs, adapters, and API keys
+- **Request/Response Adapters** (`src/claude_router/adapters/`): Translate between API formats
   - `PassthroughAdapter`: Direct forwarding to Anthropic API
+  - `AnthropicOpenAIRequestAdapter` + `OpenAIAnthropicResponseAdapter`: Converts to OpenAI Responses API format
+  - `OpenAIChatCompletionsRequestAdapter` + `ChatCompletionsAnthropicResponseAdapter`: Converts to OpenAI Chat Completions API format (for llama.cpp, Ollama, etc.)
 
 ### Routing Logic
 
@@ -53,18 +54,20 @@ The router makes decisions based on:
    - Tool call detection (`has_tool: "ToolName"` for specific tool availability)
    - Header matching
    - Request data conditions
-2. **Default passthrough** - everything else goes to Anthropic
+   - **Provider specification**: Optional `provider` field in rules to explicitly route to configured providers
+2. **Provider prefix parsing** - Models with prefixes like `openai/gpt-4` or `anthropic/claude-3` are routed to matching providers
+3. **Default passthrough** - everything else goes to Anthropic
 
-Override rules are processed in order, with the first matching rule taking precedence.
+Override rules are processed in order, with the first matching rule taking precedence. Provider resolution follows: explicit rule provider > parsed provider prefix > "anthropic" default.
 
 ### Configuration
 
 All routing behavior is controlled by `router.yaml`:
 
-- **Model mappings**: `plan_model`, `background_model` for OpenAI models
-- **Override rules**: Flexible routing conditions with `when` clauses
+- **Provider definitions**: `providers` section defining custom API endpoints with adapters (OpenAI, llama.cpp, Ollama, etc.)
+- **Override rules**: Flexible routing conditions with `when` clauses and optional `provider` targeting
 - **OpenAI settings**: API key, reasoning effort thresholds, summary inclusion
-- **Timeouts**: Connection and read timeout configuration
+- **Timeouts**: Global and provider-specific connection and read timeout configuration
 - **Logging**: Configurable log levels
 
 #### Override Rule Conditions
@@ -77,6 +80,23 @@ Override rules support various `when` conditions:
 - `request.has_tool: "ToolName"` - matches requests containing specific tool calls
 - `header.HeaderName: "value"` - HTTP header matching
 
+**Provider Configuration Example:**
+
+```yaml
+providers:
+  openai:
+    base_url: "https://api.openai.com/v1"
+    adapter: "openai-responses"
+    api_key_env: "OPENAI_API_KEY"
+  llama-local:
+    base_url: "http://localhost:8080/v1"
+    adapter: "openai-chat-completions"
+    api_key_env: "LLAMA_API_KEY"  # optional
+    timeouts_ms:
+      connect: 3000
+      read: 120000
+```
+
 **Regex Examples:**
 
 - `system_regex: r"\bplan mode is (activated|triggered|on)\b"` - matches plan mode activation
@@ -87,15 +107,21 @@ Override rules support various `when` conditions:
 ### Key Features
 
 - **Hot reload**: Configuration changes are picked up automatically
+- **Multi-adapter support**: Three adapter types for different API compatibility levels
 - **Streaming support**: Handles both streaming and non-streaming responses
 - **Request translation**: Full conversion between Anthropic and OpenAI API formats
 - **Reasoning effort mapping**: Maps token budgets to OpenAI reasoning effort levels
+- **Provider flexibility**: Support for any OpenAI-compatible API (llama.cpp, Ollama, LocalAI)
 - **Error handling**: Proper HTTP status codes and error propagation
 
 ## Important Notes
 
+- **Adapter Types**: Three adapter types available:
+  - `anthropic-passthrough`: Direct forwarding to Anthropic API
+  - `openai-responses`: For OpenAI Responses API (with reasoning capabilities)
+  - `openai-chat-completions`: For standard OpenAI Chat Completions API (llama.cpp, Ollama, LocalAI)
 - Plan mode detection is configured via override rules using `system_regex: r"\bplan mode is (activated|triggered|on)\b"` to detect when Claude Code enters plan mode
-- Haiku/mini model requests are routed to cost-efficient OpenAI models via override rules
+- Provider resolution precedence: explicit rule provider > model prefix parsing > "anthropic" default
 - All requests include request IDs for tracing and debugging
 - Configuration supports environment variable substitution for API keys
 - The router supports both streaming and non-streaming responses with proper error handling
@@ -108,9 +134,16 @@ Override rules support various `when` conditions:
 - `src/claude_router/config/` - Configuration loading, validation, and hot reload
 - `tests/` - Unit tests for routing logic and configuration
 
-The `ModelRouter.decide_route()` method is the main entry point that processes override rules and returns routing decisions. Override rule matching happens in `_matches_override_condition()` with support for various condition types including:
+The `ModelRouter.decide_route()` method is the main entry point that processes override rules and returns `RouterDecision` objects with provider, adapter, and model information. Override rule matching happens in `_matches_override_condition()` with support for various condition types including:
 
 - System prompt regex analysis via `_extract_system_content()`
 - User message regex analysis via `_extract_user_content()` (matches last user message only)
 - Model regex matching with case-insensitive search and error handling
 - Tool detection via `_has_tool()`
+- Provider prefix parsing via `_parse_provider_model()`
+
+The server dispatches requests to different handlers based on the adapter type:
+
+- `_handle_passthrough_request()` for Anthropic passthrough
+- `_handle_openai_request()` for OpenAI Responses API
+- `_handle_openai_chat_completions_request()` for OpenAI Chat Completions API

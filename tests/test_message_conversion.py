@@ -2,9 +2,7 @@ import json
 
 import pytest
 
-from src.claude_router.adapters.anthropic_openai_request_adapter import (
-    AnthropicOpenAIRequestAdapter,
-)
+from src.claude_router.adapters import ResponsesRequestAdapter
 from src.claude_router.config import Config
 from src.claude_router.router import ModelRouter
 
@@ -13,7 +11,7 @@ class TestMessageConversion:
     def setup_method(self):
         self.config = Config()
         self.router = ModelRouter(self.config)
-        self.adapter = AnthropicOpenAIRequestAdapter(self.config, self.router)
+        self.adapter = ResponsesRequestAdapter(self.config, self.router)
 
     def test_convert_tool_use_to_function_call(self):
         messages = [
@@ -137,7 +135,7 @@ class TestMessageConversion:
 async def test_adapt_request_integration_includes_function_items():
     config = Config()
     router = ModelRouter(config)
-    adapter = AnthropicOpenAIRequestAdapter(config, router)
+    adapter = ResponsesRequestAdapter(config, router)
 
     anthropic_request = {
         "model": "claude-3-sonnet",

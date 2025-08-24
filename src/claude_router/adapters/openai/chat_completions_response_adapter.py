@@ -10,8 +10,8 @@ from openai.types.completion_usage import CompletionUsage
 logger = structlog.get_logger(__name__)
 
 
-class ChatCompletionsAnthropicResponseAdapter:
-    """Adapter that translates OpenAI Chat Completions API responses to Anthropic format."""
+class ChatCompletionsResponseAdapter:
+    """Adapter translating OpenAI Chat Completions API responses to Anthropic format."""
 
     def __init__(self) -> None:
         pass
@@ -41,10 +41,9 @@ class ChatCompletionsAnthropicResponseAdapter:
 
             # Process message content
             if message.content:
-                anthropic_response["content"].append({
-                    "type": "text",
-                    "text": message.content
-                })
+                anthropic_response["content"].append(
+                    {"type": "text", "text": message.content}
+                )
 
             # Process tool calls if present
             if message.tool_calls:
@@ -55,16 +54,22 @@ class ChatCompletionsAnthropicResponseAdapter:
 
                         # Parse arguments
                         try:
-                            arguments = json.loads(function.arguments) if function.arguments else {}
+                            arguments = (
+                                json.loads(function.arguments)
+                                if function.arguments
+                                else {}
+                            )
                         except (json.JSONDecodeError, TypeError):
                             arguments = {"raw_arguments": function.arguments}
 
-                        anthropic_response["content"].append({
-                            "type": "tool_use",
-                            "id": tool_call.id,
-                            "name": function.name,
-                            "input": arguments
-                        })
+                        anthropic_response["content"].append(
+                            {
+                                "type": "tool_use",
+                                "id": tool_call.id,
+                                "name": function.name,
+                                "input": arguments,
+                            }
+                        )
 
         return anthropic_response
 
@@ -107,8 +112,7 @@ class ChatCompletionsAnthropicResponseAdapter:
         }
 
     async def adapt_stream(
-        self,
-        openai_stream: AsyncStream[ChatCompletionChunk]
+        self, openai_stream: AsyncStream[ChatCompletionChunk]
     ) -> AsyncIterator[str]:
         """Convert OpenAI Chat Completions streaming response to Anthropic format."""
 
@@ -187,7 +191,7 @@ class ChatCompletionsAnthropicResponseAdapter:
                         if function:
                             accumulated_tool_calls[tool_id] = {
                                 "name": function.name or "",
-                                "arguments": function.arguments or ""
+                                "arguments": function.arguments or "",
                             }
 
                             # Start tool use content block
@@ -198,7 +202,7 @@ class ChatCompletionsAnthropicResponseAdapter:
                                     "type": "tool_use",
                                     "id": tool_id,
                                     "name": function.name or "",
-                                    "input": {}
+                                    "input": {},
                                 },
                             }
                             yield f"data: {json.dumps(content_start)}\n\n"
@@ -208,7 +212,9 @@ class ChatCompletionsAnthropicResponseAdapter:
                     elif tool_id and tool_id in accumulated_tool_calls:
                         function = tool_call.function
                         if function and function.arguments:
-                            accumulated_tool_calls[tool_id]["arguments"] += function.arguments
+                            accumulated_tool_calls[tool_id]["arguments"] += (
+                                function.arguments
+                            )
 
             # Handle finish reason
             if finish_reason:
@@ -233,7 +239,7 @@ class ChatCompletionsAnthropicResponseAdapter:
                             "index": content_block_index,
                             "delta": {
                                 "type": "input_json_delta",
-                                "partial_json": json.dumps(arguments)
+                                "partial_json": json.dumps(arguments),
                             },
                         }
                         yield f"data: {json.dumps(delta_event)}\n\n"
@@ -257,8 +263,6 @@ class ChatCompletionsAnthropicResponseAdapter:
                 yield f"data: {json.dumps(message_delta)}\n\n"
 
                 # Send message stop
-                message_stop = {
-                    "type": "message_stop"
-                }
+                message_stop = {"type": "message_stop"}
                 yield f"data: {json.dumps(message_stop)}\n\n"
                 break

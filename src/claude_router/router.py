@@ -89,7 +89,7 @@ class ModelRouter:
             )
 
             if self._matches_override_condition(override, headers, request_data):
-                # Resolve provider: explicit rule provider > parsed provider prefix > "anthropic"
+                # Resolve provider: explicit > parsed provider > "anthropic"
                 if override.provider:
                     resolved_provider = override.provider
                     model = override.model
@@ -489,8 +489,8 @@ class ModelRouter:
     def _resolve_adapter(self, provider: str) -> str:
         """
         Resolve adapter type for a given provider.
-        
-        Returns the adapter type from provider config, or default based on provider name.
+
+        Returns adapter type from provider config, or default based on provider name.
         """
         # Look up in provider config first
         if provider in self.config.providers:
@@ -504,6 +504,7 @@ class ModelRouter:
         else:
             # For unknown providers, assume they're OpenAI-compatible
             logger.warning(
-                f"Unknown provider '{provider}', defaulting to openai-chat-completions adapter"
+                f"Unknown provider '{provider}', defaulting to "
+                "openai-chat-completions adapter"
             )
             return "openai-chat-completions"

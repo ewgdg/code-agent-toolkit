@@ -638,7 +638,7 @@ class TestModelRouter:
             "llama-local": ProviderConfig(
                 base_url="http://localhost:8080/v1",
                 adapter="openai-chat-completions",
-                api_key_env="LLAMA_API_KEY"
+                api_key_env="LLAMA_API_KEY",
             )
         }
 
@@ -647,7 +647,7 @@ class TestModelRouter:
             OverrideRule(
                 when={"request": {"model_regex": "llama"}},
                 model="llama3.1",
-                provider="llama-local"
+                provider="llama-local",
             )
         ]
 
@@ -666,8 +666,7 @@ class TestModelRouter:
         """Test provider resolution from model prefix when no explicit provider."""
         self.config.overrides = [
             OverrideRule(
-                when={"request": {"model_regex": "test"}},
-                model="openai/gpt-4o"
+                when={"request": {"model_regex": "test"}}, model="openai/gpt-4o"
             )
         ]
 
@@ -687,7 +686,7 @@ class TestModelRouter:
             OverrideRule(
                 when={"request": {"model_regex": "test"}},
                 model="unknown-model",
-                provider="unknown-provider"
+                provider="unknown-provider",
             )
         ]
 

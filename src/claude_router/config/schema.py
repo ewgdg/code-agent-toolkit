@@ -45,9 +45,7 @@ class OpenAIConfig(BaseModel):
     reasoning_thresholds: ReasoningThresholds = Field(
         default_factory=ReasoningThresholds
     )
-    reasoning_model_prefixes: list[str] = Field(
-        default=["gpt-5", "o4", "o"]
-    )
+    reasoning_model_prefixes: list[str] = Field(default=["gpt-5", "o4", "o"])
 
     @field_validator("reasoning_effort_default")
     @classmethod
@@ -84,14 +82,25 @@ class LoggingConfig(BaseModel):
 
 class ProviderConfig(BaseModel):
     base_url: str = Field(description="Base URL for the provider API")
-    adapter: str = Field(description="Adapter type: anthropic-passthrough, openai-responses, openai-chat-completions")
-    api_key_env: str | None = Field(default=None, description="Environment variable name for API key")
-    timeouts_ms: TimeoutsConfig | None = Field(default=None, description="Provider-specific timeouts")
+    adapter: str = Field(
+        description="Adapter type: anthropic-passthrough, openai-responses, "
+        "openai-chat-completions"
+    )
+    api_key_env: str | None = Field(
+        default=None, description="Environment variable name for API key"
+    )
+    timeouts_ms: TimeoutsConfig | None = Field(
+        default=None, description="Provider-specific timeouts"
+    )
 
     @field_validator("adapter")
     @classmethod
     def validate_adapter(cls, v: str) -> str:
-        valid_adapters = ["anthropic-passthrough", "openai-responses", "openai-chat-completions"]
+        valid_adapters = [
+            "anthropic-passthrough",
+            "openai-responses",
+            "openai-chat-completions",
+        ]
         if v not in valid_adapters:
             raise ValueError(f"adapter must be one of: {', '.join(valid_adapters)}")
         return v
@@ -100,7 +109,9 @@ class ProviderConfig(BaseModel):
 class OverrideRule(BaseModel):
     when: dict[str, Any] = Field(description="Conditions for this rule")
     model: str = Field(description="Model to use when conditions match")
-    provider: str | None = Field(default=None, description="Provider to use when conditions match")
+    provider: str | None = Field(
+        default=None, description="Provider to use when conditions match"
+    )
     compiled_patterns: dict[str, Pattern[str]] = Field(
         default_factory=dict, exclude=True
     )
@@ -114,7 +125,9 @@ class OverrideRule(BaseModel):
 
 class Config(BaseModel):
     router: RouterConfig = Field(default_factory=RouterConfig)
-    providers: dict[str, ProviderConfig] = Field(default_factory=dict, description="Provider configurations")
+    providers: dict[str, ProviderConfig] = Field(
+        default_factory=dict, description="Provider configurations"
+    )
     openai: OpenAIConfig = Field(default_factory=OpenAIConfig)
     timeouts_ms: TimeoutsConfig = Field(default_factory=TimeoutsConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
