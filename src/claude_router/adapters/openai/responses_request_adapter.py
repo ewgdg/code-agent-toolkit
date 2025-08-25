@@ -91,47 +91,9 @@ class ResponsesRequestAdapter:
 
         # Apply model configuration parameters from query string
         if model_config:
-            self._log_config_overrides(openai_request, model_config)
             openai_request.update(model_config)
 
         return openai_request
-
-    def _log_config_overrides(
-        self, openai_request: dict[str, Any], model_config: dict[str, Any]
-    ) -> None:
-        """Log configuration overrides with support for nested paths."""
-
-        def _get_nested_value(data: dict[str, Any], path: str) -> Any:
-            """Get value from nested dict using dot notation path."""
-            parts = path.split(".")
-            current = data
-            for part in parts:
-                if isinstance(current, dict) and part in current:
-                    current = current[part]
-                else:
-                    return "<not set>"
-            return current
-
-        def _log_overrides(config: dict[str, Any], path_prefix: str = "") -> None:
-            """Recursively log configuration overrides."""
-            for key, new_value in config.items():
-                current_path = f"{path_prefix}.{key}" if path_prefix else key
-
-                if isinstance(new_value, dict):
-                    # Recurse into nested dict
-                    _log_overrides(new_value, current_path)
-                else:
-                    # Log the override for this leaf value
-                    old_value = _get_nested_value(openai_request, current_path)
-                    if old_value != new_value:
-                        logger.info(
-                            "Model configuration overridden by query parameter",
-                            parameter=current_path,
-                            old_value=old_value,
-                            new_value=new_value,
-                        )
-
-        _log_overrides(model_config)
 
     def _convert_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Convert Anthropic messages format to OpenAI input format."""
