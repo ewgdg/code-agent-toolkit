@@ -94,7 +94,7 @@ class ModelRouter:
             if self._matches_override_condition(override, headers, request_data):
                 # Use original model if override.model is None
                 target_model = override.model if override.model is not None else model
-                
+
                 # Resolve provider: explicit > parsed provider > "anthropic"
                 if override.provider:
                     resolved_provider = override.provider

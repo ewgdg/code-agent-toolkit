@@ -141,7 +141,8 @@ class ModelConfigEntry(BaseModel):
 class OverrideRule(BaseModel):
     when: dict[str, Any] = Field(description="Conditions for this rule")
     model: str | None = Field(
-        default=None, description="Model to use when conditions match (defaults to original model)"
+        default=None,
+        description="Model to use when conditions match (defaults to original model)",
     )
     provider: str | None = Field(
         default=None, description="Provider to use when conditions match"
