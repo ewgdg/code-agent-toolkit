@@ -55,7 +55,7 @@ class ModelRouter:
         )
 
         # Check override rules first (highest precedence)
-        override_decision = self._check_overrides(headers, request_data)
+        override_decision = self._check_overrides(headers, request_data, model)
         if override_decision:
             logger.debug(
                 "Override rule matched",
@@ -78,7 +78,7 @@ class ModelRouter:
         )
 
     def _check_overrides(
-        self, headers: dict[str, str], request_data: dict[str, Any]
+        self, headers: dict[str, str], request_data: dict[str, Any], model: str
     ) -> RouterDecision | None:
         """Check override rules for routing decisions."""
 
@@ -92,13 +92,16 @@ class ModelRouter:
             )
 
             if self._matches_override_condition(override, headers, request_data):
+                # Use original model if override.model is None
+                target_model = override.model if override.model is not None else model
+                
                 # Resolve provider: explicit > parsed provider > "anthropic"
                 if override.provider:
                     resolved_provider = override.provider
-                    model = override.model
+                    resolved_model = target_model
                 else:
-                    resolved_provider, model = self._parse_provider_model(
-                        override.model
+                    resolved_provider, resolved_model = self._parse_provider_model(
+                        target_model
                     )
 
                 # Apply model config overrides if specified
@@ -114,14 +117,14 @@ class ModelRouter:
                 logger.debug(
                     f"Override rule {i + 1} MATCHED",
                     provider=resolved_provider,
-                    model=model,
+                    model=resolved_model,
                     adapter=adapter,
                     applied_config=model_config,
                     config_overrides=override.config,
                 )
                 return RouterDecision(
                     target=resolved_provider,
-                    model=model,
+                    model=resolved_model,
                     reason=f"Override rule {i + 1} matched: {override.when}",
                     provider=resolved_provider,
                     adapter=adapter,
