@@ -65,7 +65,10 @@ class OpenAIConfig(BaseModel):
             return False
         model_lower = model.lower()
         return (
-            any(model_lower.startswith(prefix.lower()) for prefix in self.reasoning_model_prefixes)
+            any(
+                model_lower.startswith(prefix.lower())
+                for prefix in self.reasoning_model_prefixes
+            )
             and "-chat" not in model_lower
         )
 

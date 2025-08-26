@@ -291,7 +291,6 @@ class ResponsesRequestAdapter:
 
         return openai_tools
 
-
     def _format_tool_result_content(self, content: Any) -> str:
         """Format tool result content for OpenAI."""
 

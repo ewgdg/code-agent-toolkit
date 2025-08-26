@@ -3,7 +3,6 @@ Unified LangChain adapter that handles both request processing and response gene
 """
 
 import inspect
-import json
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any
 

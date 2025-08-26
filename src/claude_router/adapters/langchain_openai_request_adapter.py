@@ -88,7 +88,8 @@ class LangChainOpenAIRequestAdapter:
                 api_type="responses" if use_responses_api else "chat_completions",
                 message_count=len(messages),
                 has_tools=bool(anthropic_request.get("tools")),
-                has_reasoning=support_reasoning or self.config.openai.supports_reasoning(model),
+                has_reasoning=support_reasoning
+                or self.config.openai.supports_reasoning(model),
                 stream=anthropic_request.get("stream", False),
             )
 
@@ -338,7 +339,6 @@ class LangChainOpenAIRequestAdapter:
             )
 
         return openai_tools
-
 
     async def make_request(
         self,

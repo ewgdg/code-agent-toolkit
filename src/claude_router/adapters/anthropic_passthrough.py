@@ -1,13 +1,10 @@
 from collections.abc import AsyncIterator
-from typing import Any
 
 import httpx
 import structlog
-from fastapi import Response
 from fastapi.responses import StreamingResponse
 
 from ..config import Config
-from .base import UnifiedRequestAdapter
 
 logger = structlog.get_logger(__name__)
 

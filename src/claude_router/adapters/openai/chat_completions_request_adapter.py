@@ -292,4 +292,3 @@ class ChatCompletionsRequestAdapter:
             return response  # type: ignore[no-any-return]
         finally:
             await client.close()
-
