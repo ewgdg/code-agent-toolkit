@@ -17,6 +17,7 @@ class RouterDecision:
         provider: str | None = None,
         adapter: str | None = None,
         model_config: dict[str, Any] | None = None,
+        support_reasoning: bool = False,
     ):
         self.target = target  # "openai" or "anthropic" (kept for backward compat)
         self.model = model  # Model to use
@@ -24,6 +25,7 @@ class RouterDecision:
         self.provider = provider or target  # Provider name, defaults to target
         self.adapter = adapter  # Adapter type
         self.model_config = model_config or {}  # Applied model config from overrides
+        self.support_reasoning = support_reasoning  # Whether reasoning is supported
 
 
 class ModelRouter:
@@ -72,6 +74,7 @@ class ModelRouter:
             provider="anthropic",
             adapter="anthropic-passthrough",
             model_config={},
+            support_reasoning=False,
         )
 
     def _check_overrides(
@@ -123,6 +126,7 @@ class ModelRouter:
                     provider=resolved_provider,
                     adapter=adapter,
                     model_config=model_config,
+                    support_reasoning=override.support_reasoning,
                 )
             else:
                 logger.debug(f"Override rule {i + 1} did NOT match")

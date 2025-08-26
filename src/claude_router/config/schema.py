@@ -45,7 +45,7 @@ class OpenAIConfig(BaseModel):
     reasoning_thresholds: ReasoningThresholds = Field(
         default_factory=ReasoningThresholds
     )
-    reasoning_model_prefixes: list[str] = Field(default=["gpt-5", "o4", "o"])
+    reasoning_model_prefixes: list[str] = Field(default=[])
 
     @field_validator("reasoning_effort_default")
     @classmethod
@@ -127,6 +127,9 @@ class OverrideRule(BaseModel):
     model: str = Field(description="Model to use when conditions match")
     provider: str | None = Field(
         default=None, description="Provider to use when conditions match"
+    )
+    support_reasoning: bool = Field(
+        default=False, description="Enable reasoning capabilities for this rule"
     )
     config: dict[str, Any | ModelConfigEntry] | None = Field(
         default=None, description="Model configuration overrides with priority control"

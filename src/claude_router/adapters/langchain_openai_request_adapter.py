@@ -46,6 +46,7 @@ class LangChainOpenAIRequestAdapter:
         model: str,
         use_responses_api: bool = True,
         model_config: dict[str, Any] | None = None,
+        support_reasoning: bool = False,
     ) -> dict[str, Any]:
         """
         Translate Anthropic Messages API request to OpenAI format.
@@ -56,6 +57,7 @@ class LangChainOpenAIRequestAdapter:
             model: Target model name
             use_responses_api: True for Responses API, False for Chat Completions
             model_config: Additional model configuration overrides
+            support_reasoning: Whether the model supports reasoning capabilities
 
         Returns:
             OpenAI API request dict
@@ -86,7 +88,7 @@ class LangChainOpenAIRequestAdapter:
                 api_type="responses" if use_responses_api else "chat_completions",
                 message_count=len(messages),
                 has_tools=bool(anthropic_request.get("tools")),
-                has_reasoning=self._supports_reasoning(model) and use_responses_api,
+                has_reasoning=support_reasoning or self._supports_reasoning(model),
                 stream=anthropic_request.get("stream", False),
             )
 

@@ -54,6 +54,7 @@ class UnifiedLangChainAdapter(UnifiedRequestAdapter):
             model=decision.model,
             use_responses_api=use_responses_api,
             model_config=decision.model_config,
+            support_reasoning=decision.support_reasoning,
         )
 
         # Make API call
