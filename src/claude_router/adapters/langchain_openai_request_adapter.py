@@ -88,7 +88,7 @@ class LangChainOpenAIRequestAdapter:
                 api_type="responses" if use_responses_api else "chat_completions",
                 message_count=len(messages),
                 has_tools=bool(anthropic_request.get("tools")),
-                has_reasoning=support_reasoning or self._supports_reasoning(model),
+                has_reasoning=support_reasoning or self.config.openai.supports_reasoning(model),
                 stream=anthropic_request.get("stream", False),
             )
 
@@ -189,14 +189,16 @@ class LangChainOpenAIRequestAdapter:
 
                     elif btype == "tool_result":
                         # Emit ToolMessage immediately (independent of user/assistant role)
-                        tool_content = self._format_tool_result_content(
-                            block.get("content")
+                        content_data = block.get("content")
+                        tool_content, is_error = self._format_tool_result_content(
+                            content_data
                         )
                         messages.append(
                             ToolMessage(
                                 content=tool_content,
                                 tool_call_id=block.get("tool_use_id", "")
                                 or block.get("id", ""),
+                                status="error" if is_error else "success",
                             )
                         )
 
@@ -257,14 +259,30 @@ class LangChainOpenAIRequestAdapter:
 
         return messages
 
-    def _format_tool_result_content(self, content: Any) -> str:
-        """Format tool result content."""
+    def _format_tool_result_content(self, content: Any) -> tuple[str, bool]:
+        """Format tool result content and detect if it's an error.
+
+        Returns:
+            tuple: (formatted_content, is_error)
+        """
+        is_error = False
+
         if isinstance(content, str):
-            return content
-        elif isinstance(content, dict | list):
-            return json.dumps(content)
+            return content, is_error
+        elif isinstance(content, dict):
+            # Check for error indicator
+            if content.get("is_error", False):
+                is_error = True
+                error_content = content.get(
+                    "content", content.get("error", "Tool execution failed")
+                )
+                return str(error_content), is_error
+            else:
+                return json.dumps(content), is_error
+        elif isinstance(content, list):
+            return json.dumps(content), is_error
         else:
-            return str(content)
+            return str(content), is_error
 
     def _prepare_openai_request(
         self,
@@ -321,19 +339,6 @@ class LangChainOpenAIRequestAdapter:
 
         return openai_tools
 
-    def _supports_reasoning(self, model: str) -> bool:
-        """Check if the model supports reasoning parameters.
-
-        Uses configured reasoning model prefixes from OpenAI configuration.
-        """
-        if not model:
-            return False
-        model_lower = model.lower()
-        reasoning_prefixes = self.config.openai.reasoning_model_prefixes
-        return (
-            any(model_lower.startswith(prefix.lower()) for prefix in reasoning_prefixes)
-            and "-chat" not in model_lower
-        )
 
     async def make_request(
         self,

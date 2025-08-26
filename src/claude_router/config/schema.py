@@ -45,7 +45,7 @@ class OpenAIConfig(BaseModel):
     reasoning_thresholds: ReasoningThresholds = Field(
         default_factory=ReasoningThresholds
     )
-    reasoning_model_prefixes: list[str] = Field(default=[])
+    reasoning_model_prefixes: list[str] = Field(default=["o"])
 
     @field_validator("reasoning_effort_default")
     @classmethod
@@ -55,6 +55,19 @@ class OpenAIConfig(BaseModel):
                 "reasoning_effort_default must be 'minimal', 'low', 'medium', or 'high'"
             )
         return v
+
+    def supports_reasoning(self, model: str) -> bool:
+        """Check if the model supports reasoning parameters.
+
+        Uses configured reasoning model prefixes from OpenAI configuration.
+        """
+        if not model:
+            return False
+        model_lower = model.lower()
+        return (
+            any(model_lower.startswith(prefix.lower()) for prefix in self.reasoning_model_prefixes)
+            and "-chat" not in model_lower
+        )
 
 
 class TimeoutsConfig(BaseModel):

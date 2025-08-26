@@ -76,7 +76,7 @@ class ResponsesRequestAdapter:
             openai_request["max_output_tokens"] = anthropic_request["max_tokens"]
 
         # Add reasoning effort for supported models
-        if self._supports_reasoning(target_model):
+        if self.config.openai.supports_reasoning(target_model):
             reasoning_effort = self.router.get_reasoning_effort(anthropic_request)
             logger.debug(
                 "Reasoning effort calculated",
@@ -291,19 +291,6 @@ class ResponsesRequestAdapter:
 
         return openai_tools
 
-    def _supports_reasoning(self, model: str) -> bool:
-        """Check if the model supports reasoning parameters.
-
-        Uses configured reasoning model prefixes from OpenAI configuration.
-        """
-        if not model:
-            return False
-        model_lower = model.lower()
-        reasoning_prefixes = self.config.openai.reasoning_model_prefixes
-        return (
-            any(model_lower.startswith(prefix.lower()) for prefix in reasoning_prefixes)
-            and "-chat" not in model_lower
-        )
 
     def _format_tool_result_content(self, content: Any) -> str:
         """Format tool result content for OpenAI."""

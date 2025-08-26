@@ -66,7 +66,7 @@ class ChatCompletionsRequestAdapter:
             openai_request["stop"] = anthropic_request["stop_sequences"]
 
         # Add reasoning effort for supported models
-        if self._supports_reasoning(model):
+        if self.config.openai.supports_reasoning(model):
             reasoning_effort = self.router.get_reasoning_effort(anthropic_request)
             logger.debug(
                 "Reasoning effort calculated",
@@ -293,16 +293,3 @@ class ChatCompletionsRequestAdapter:
         finally:
             await client.close()
 
-    def _supports_reasoning(self, model: str) -> bool:
-        """Check if the model supports reasoning parameters.
-
-        Uses configured reasoning model prefixes from OpenAI configuration.
-        """
-        if not model:
-            return False
-        model_lower = model.lower()
-        reasoning_prefixes = self.config.openai.reasoning_model_prefixes
-        return (
-            any(model_lower.startswith(prefix.lower()) for prefix in reasoning_prefixes)
-            and "-chat" not in model_lower
-        )
