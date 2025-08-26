@@ -397,7 +397,6 @@ class TestModelRouter:
         assert decision.target == "anthropic"
         assert decision.model == "passthrough"
 
-
     def test_override_rule_with_model_config(self):
         """Test that override rules pass through model configuration."""
         self.config.overrides = [
@@ -423,7 +422,6 @@ class TestModelRouter:
             "reasoning": {"effort": "high"},
             "temperature": 0.2,
         }
-
 
     def test_user_regex_detection(self):
         """Test routing decision for system reminder messages using user_regex."""
@@ -719,7 +717,7 @@ class TestModelRouter:
         """Test the _apply_granular_config_overrides method directly."""
         existing_config = {
             "temperature": 0.7,
-            "reasoning": {"effort": "medium", "tokens": 1000}
+            "reasoning": {"effort": "medium", "tokens": 1000},
         }
 
         override_config = {
@@ -730,8 +728,8 @@ class TestModelRouter:
                 "summary": "auto",  # default priority - should be added
                 "tokens": ModelConfigEntry(
                     value=2000, priority="always"
-                )  # should override
-            }
+                ),  # should override
+            },
         }
 
         result = self.router._apply_granular_config_overrides(
@@ -745,7 +743,7 @@ class TestModelRouter:
                 "effort": "medium",  # preserved (default priority, existing value)
                 "tokens": 2000,  # overridden (always priority)
                 "summary": "auto",  # added (no existing value)
-            }
+            },
         }
 
         assert result == expected

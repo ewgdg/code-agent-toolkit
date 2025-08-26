@@ -446,7 +446,6 @@ class ModelRouter:
             )
             return "openai-chat-completions"
 
-
     def _apply_granular_config_overrides(
         self, target: dict[str, Any], source: dict[str, Any]
     ) -> dict[str, Any]:

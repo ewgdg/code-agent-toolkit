@@ -5,7 +5,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-
 class RouterConfig(BaseModel):
     listen: str = Field(default="0.0.0.0:8787", description="Host:port to listen on")
     original_base_url: str = Field(default="https://api.anthropic.com")
@@ -85,13 +84,18 @@ class ProviderConfig(BaseModel):
     base_url: str = Field(description="Base URL for the provider API")
     adapter: str = Field(
         description="Adapter type: anthropic-passthrough, openai-responses, "
-        "openai-chat-completions"
+        "openai-chat-completions, langchain-openai"
     )
     api_key_env: str | None = Field(
         default=None, description="Environment variable name for API key"
     )
     timeouts_ms: TimeoutsConfig | None = Field(
         default=None, description="Provider-specific timeouts"
+    )
+    use_responses_api: bool = Field(
+        default=True,
+        description="For langchain-openai adapter: True for Responses API, "
+        "False for Chat Completions API",
     )
 
     @field_validator("adapter")
@@ -101,6 +105,7 @@ class ProviderConfig(BaseModel):
             "anthropic-passthrough",
             "openai-responses",
             "openai-chat-completions",
+            "langchain-openai",
         ]
         if v not in valid_adapters:
             raise ValueError(f"adapter must be one of: {', '.join(valid_adapters)}")

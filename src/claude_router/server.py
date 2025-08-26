@@ -1,24 +1,15 @@
 import json
-from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 
 import structlog
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from openai import AsyncStream
-from openai.types.chat import ChatCompletion, ChatCompletionChunk
-from openai.types.responses import Response as OpenAIResponse
-from openai.types.responses import ResponseStreamEvent
 
 from .adapters import (
-    ChatCompletionsRequestAdapter,
-    ChatCompletionsResponseAdapter,
     PassthroughAdapter,
-    ResponsesRequestAdapter,
-    ResponsesResponseAdapter,
+    UnifiedLangChainAdapter,
 )
 from .config import ConfigLoader
 from .router import ModelRouter
@@ -47,19 +38,19 @@ class ProxyRouter:
         self.router = ModelRouter(self.config)
 
         # Initialize adapters
-        self.openai_request_adapter = ResponsesRequestAdapter(self.config, self.router)
-        self.openai_response_adapter = ResponsesResponseAdapter(self.config)
-        self.chat_completions_request_adapter = ChatCompletionsRequestAdapter(
+        self.passthrough_adapter = PassthroughAdapter(self.config)
+
+        # Initialize unified LangChain adapter
+        self.unified_langchain_adapter = UnifiedLangChainAdapter(
             self.config, self.router
         )
-        self.chat_completions_response_adapter = ChatCompletionsResponseAdapter()
-        self.passthrough_adapter = PassthroughAdapter(self.config)
 
         # Setup FastAPI app
         self.app = FastAPI(
             title="Claude Code Model Router",
             description="Proxy router for Claude Code CLI traffic with OpenAI",
             version="1.0.0",
+            lifespan=self._lifespan,
         )
 
         # Add CORS middleware - allow all origins
@@ -91,6 +82,25 @@ class ProxyRouter:
             logger_factory=structlog.PrintLoggerFactory(),
             cache_logger_on_first_use=True,
         )
+
+    def _handle_adapter_error(
+        self, e: Exception, request_id: str, context: str
+    ) -> None:
+        """Common error handling logic for adapters."""
+        logger.error(
+            f"{context} error",
+            request_id=request_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+
+        # Map common errors to appropriate HTTP status codes
+        if "api key" in str(e).lower():
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        elif "timeout" in str(e).lower():
+            raise HTTPException(status_code=504, detail="Gateway timeout")
+        else:
+            raise HTTPException(status_code=502, detail="Bad gateway")
 
     def _setup_routes(self) -> None:
         """Setup FastAPI routes."""
@@ -154,28 +164,22 @@ class ProxyRouter:
             )
 
             # Route request based on adapter type
-            if decision.adapter == "anthropic-passthrough":
-                return await self._handle_passthrough_request(
-                    method, path, headers, body, query_params, request_id
-                )
-            elif decision.adapter == "openai-responses":
-                return await self._handle_openai_request(
-                    request_data,
-                    decision.model,
-                    decision.model_config,
-                    headers,
-                    request_id,
-                )
-            elif decision.adapter == "openai-chat-completions":
-                return await self._handle_openai_chat_completions_request(
-                    request_data,
-                    decision,
-                    headers,
-                    request_id,
-                )
-            else:
-                logger.error(f"Unknown adapter type: {decision.adapter}")
-                raise HTTPException(status_code=500, detail="Unknown adapter type")
+            try:
+                if decision.adapter == "anthropic-passthrough":
+                    return await self.passthrough_adapter.handle_request(
+                        method, f"/{path}", headers, body, query_params
+                    )
+                elif decision.adapter == "langchain-openai":
+                    return await self.unified_langchain_adapter.handle_request(
+                        request_data, decision, headers, request_id
+                    )
+                else:
+                    logger.error(f"Unknown adapter type: {decision.adapter}")
+                    raise HTTPException(status_code=500, detail="Unknown adapter type")
+            except HTTPException:
+                raise  # Re-raise HTTP exceptions as-is
+            except Exception as e:
+                self._handle_adapter_error(e, request_id, f"{decision.adapter} request")
 
         except Exception as e:
             logger.error(
@@ -185,217 +189,7 @@ class ProxyRouter:
                 error_type=type(e).__name__,
             )
             raise HTTPException(status_code=500, detail="Internal server error")
-
-    async def _handle_openai_request(
-        self,
-        request_data: dict[str, Any],
-        target_model: str,
-        model_config: dict[str, Any],
-        headers: dict[str, str],
-        request_id: str,
-    ) -> Response:
-        """Handle request routed to OpenAI."""
-
-        try:
-            # Translate request
-            openai_request = await self.openai_request_adapter.adapt_request(
-                request_data, target_model, model_config
-            )
-
-            # Make OpenAI request
-            response = await self.openai_request_adapter.make_request(
-                openai_request, headers
-            )
-
-            # Handle streaming vs non-streaming
-            if isinstance(response, AsyncStream):
-                return await self._handle_openai_streaming(response, request_id)
-            else:
-                return await self._handle_openai_non_streaming(response, request_id)
-
-        except Exception as e:
-            logger.error(
-                "OpenAI request error",
-                request_id=request_id,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
-            # Map common errors to appropriate HTTP status codes
-            if "api key" in str(e).lower():
-                raise HTTPException(status_code=401, detail="Invalid API key")
-            elif "timeout" in str(e).lower():
-                raise HTTPException(status_code=504, detail="Gateway timeout")
-            else:
-                raise HTTPException(status_code=502, detail="Bad gateway")
-
-    async def _handle_openai_streaming(
-        self, openai_stream: AsyncIterator[ResponseStreamEvent], request_id: str
-    ) -> StreamingResponse:
-        """Handle streaming OpenAI response."""
-
-        async def stream_generator() -> AsyncGenerator[str, None]:
-            try:
-                async for anthropic_line in self.openai_response_adapter.adapt_stream(
-                    openai_stream
-                ):
-                    yield anthropic_line
-            except Exception as e:
-                logger.error("Streaming error", request_id=request_id, error=str(e))
-                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-
-        return StreamingResponse(
-            stream_generator(),
-            media_type="text/event-stream",
-            headers={"x-request-id": request_id},
-        )
-
-    async def _handle_openai_non_streaming(
-        self, openai_response: OpenAIResponse, request_id: str
-    ) -> Response:
-        """Handle non-streaming OpenAI response."""
-
-        # Translate response
-        anthropic_response = await self.openai_response_adapter.adapt_response(
-            openai_response
-        )
-
-        return Response(
-            content=json.dumps(anthropic_response),
-            media_type="application/json",
-            headers={"x-request-id": request_id},
-        )
-
-    async def _handle_openai_chat_completions_request(
-        self,
-        request_data: dict[str, Any],
-        decision: Any,  # RouterDecision
-        headers: dict[str, str],
-        request_id: str,
-    ) -> Response:
-        """Handle request routed to OpenAI Chat Completions API."""
-
-        try:
-            # Get provider config
-            provider_config = self.config.providers.get(decision.provider)
-            if not provider_config:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Provider '{decision.provider}' not configured",
-                )
-
-            # Translate request
-            openai_request = self.chat_completions_request_adapter.adapt_request(
-                request_data, provider_config, decision.model, decision.model_config
-            )
-
-            # Make request
-            response = await self.chat_completions_request_adapter.make_request(
-                openai_request, provider_config, headers
-            )
-
-            # Handle streaming vs non-streaming
-            if isinstance(response, AsyncStream):
-                return await self._handle_chat_completions_streaming(
-                    response, request_id
-                )
-            else:
-                return await self._handle_chat_completions_non_streaming(
-                    response, request_id
-                )
-
-        except Exception as e:
-            logger.error(
-                "OpenAI Chat Completions request error",
-                request_id=request_id,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
-            # Map common errors to appropriate HTTP status codes
-            if "api key" in str(e).lower():
-                raise HTTPException(status_code=401, detail="Invalid API key")
-            elif "timeout" in str(e).lower():
-                raise HTTPException(status_code=504, detail="Gateway timeout")
-            else:
-                raise HTTPException(status_code=502, detail="Bad gateway")
-
-    async def _handle_chat_completions_streaming(
-        self, openai_stream: AsyncStream[ChatCompletionChunk], request_id: str
-    ) -> StreamingResponse:
-        """Handle streaming Chat Completions response."""
-
-        async def stream_generator() -> AsyncGenerator[str, None]:
-            try:
-                async for (
-                    anthropic_line
-                ) in self.chat_completions_response_adapter.adapt_stream(openai_stream):
-                    yield anthropic_line
-            except Exception as e:
-                logger.error(
-                    "Chat Completions streaming error",
-                    request_id=request_id,
-                    error=str(e),
-                )
-                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-
-        return StreamingResponse(
-            stream_generator(),
-            media_type="text/event-stream",
-            headers={"x-request-id": request_id},
-        )
-
-    async def _handle_chat_completions_non_streaming(
-        self, openai_response: ChatCompletion, request_id: str
-    ) -> Response:
-        """Handle non-streaming Chat Completions response."""
-
-        # Translate response
-        anthropic_response = self.chat_completions_response_adapter.adapt_response(
-            openai_response
-        )
-
-        return Response(
-            content=json.dumps(anthropic_response),
-            media_type="application/json",
-            headers={"x-request-id": request_id},
-        )
-
-    async def _handle_passthrough_request(
-        self,
-        method: str,
-        path: str,
-        headers: dict[str, str],
-        body: bytes,
-        query_params: dict[str, str],
-        request_id: str,
-    ) -> StreamingResponse:
-        """Handle request passed through to Anthropic."""
-
-        try:
-            # Forward request - always returns StreamingResponse now
-            streaming_response = await self.passthrough_adapter.forward_request(
-                method, f"/{path}", headers, body, query_params
-            )
-
-            # Add request ID to headers
-            if hasattr(streaming_response, "headers") and streaming_response.headers:
-                streaming_response.headers["x-request-id"] = request_id
-
-            return streaming_response
-
-        except Exception as e:
-            logger.error(
-                "Passthrough request error",
-                request_id=request_id,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
-            if "timeout" in str(e).lower():
-                raise HTTPException(status_code=504, detail="Gateway timeout")
-            else:
-                raise HTTPException(status_code=502, detail="Bad gateway")
+        return Response(status_code=500)
 
     async def startup(self) -> None:
         """Startup tasks."""
@@ -405,30 +199,20 @@ class ProxyRouter:
             listen=self.config.router.listen,
         )
 
-    async def shutdown(self) -> None:
-        """Cleanup tasks."""
-        logger.info("Shutting down Claude Code Model Router")
-
-        # Close adapters
-        await self.openai_request_adapter.close()
+    @asynccontextmanager
+    async def _lifespan(self, app: FastAPI):
+        """FastAPI lifespan context that runs startup tasks."""
+        await self.startup()
+        yield
         await self.passthrough_adapter.close()
-
-        # Stop config hot reload
-        self.config_loader.stop_hot_reload()
 
 
 def create_app(config_path: Path) -> FastAPI:
     """Create FastAPI application."""
     proxy = ProxyRouter(config_path)
 
-    # Add lifecycle events
-    @proxy.app.on_event("startup")
-    async def startup() -> None:
-        await proxy.startup()
-
-    @proxy.app.on_event("shutdown")
-    async def shutdown() -> None:
-        await proxy.shutdown()
+    # Lifecycle events are now handled via FastAPI lifespan in ProxyRouter
+    # No explicit startup event registration needed here.
 
     return proxy.app
 

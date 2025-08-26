@@ -6,6 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a Claude Code Model Router - a proxy server that intelligently routes Claude Code CLI traffic between Anthropic's API and OpenAI's API based on configurable rules. It translates between Anthropic Messages API and OpenAI Chat Completions API formats.
 
+Default server runs on `http://localhost:8787`. Point Claude Code CLI to this URL:
+
+```bash
+claudecode() {
+    ANTHROPIC_BASE_URL="http://localhost:8787" \
+    claude "$@"
+}
+```
+
 ## Development Commands
 
 ```bash
@@ -43,6 +52,7 @@ uv run ruff check src/ tests/ --fix
   - `PassthroughAdapter`: Direct forwarding to Anthropic API
   - `AnthropicOpenAIRequestAdapter` + `OpenAIAnthropicResponseAdapter`: Converts to OpenAI Responses API format
   - `OpenAIChatCompletionsRequestAdapter` + `ChatCompletionsAnthropicResponseAdapter`: Converts to OpenAI Chat Completions API format (for llama.cpp, Ollama, etc.)
+  - `LangChainOpenAIRequestAdapter` + `LangChainResponsesResponseAdapter`: Unified LangChain-based adapters for OpenAI compatibility
 
 ### Routing Logic
 
@@ -116,10 +126,11 @@ providers:
 
 ## Important Notes
 
-- **Adapter Types**: Three adapter types available:
+- **Adapter Types**: Available adapter types:
   - `anthropic-passthrough`: Direct forwarding to Anthropic API
   - `openai-responses`: For OpenAI Responses API (with reasoning capabilities)
   - `openai-chat-completions`: For standard OpenAI Chat Completions API (llama.cpp, Ollama, LocalAI)
+  - `langchain-openai`: Unified LangChain-based adapter for OpenAI compatibility
 - Plan mode detection is configured via override rules using `system_regex: r"\bplan mode is (activated|triggered|on)\b"` to detect when Claude Code enters plan mode
 - Provider resolution precedence: explicit rule provider > model prefix parsing > "anthropic" default
 - All requests include request IDs for tracing and debugging
@@ -147,8 +158,9 @@ The server dispatches requests to different handlers based on the adapter type:
 - `_handle_passthrough_request()` for Anthropic passthrough
 - `_handle_openai_request()` for OpenAI Responses API
 - `_handle_openai_chat_completions_request()` for OpenAI Chat Completions API
+- `_handle_langchain_openai_request()` for LangChain-based OpenAI compatibility
 
-- ## Typing Rules
+## Typing Rules
 - Always do typing.
 - Prefer `T1|T2` over `Union[T1,T2]`
 - Avoid `Any` if possible

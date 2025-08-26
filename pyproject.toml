@@ -20,6 +20,9 @@ dependencies = [
     "anthropic>=0.40.0",
     "openai>=1",
     "python-dotenv>=1.0.0",
+    # LangChain dependencies for POC
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -44,6 +47,7 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -1,10 +1,13 @@
 from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 import structlog
+from fastapi import Response
 from fastapi.responses import StreamingResponse
 
 from ..config import Config
+from .base import UnifiedRequestAdapter
 
 logger = structlog.get_logger(__name__)
 
@@ -20,7 +23,7 @@ class PassthroughAdapter:
             )
         )
 
-    async def forward_request(
+    async def handle_request(
         self,
         method: str,
         path: str,
