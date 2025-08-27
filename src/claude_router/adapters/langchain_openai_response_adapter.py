@@ -33,10 +33,8 @@ from ..router import ModelRouter
 
 log = structlog.get_logger(__name__)
 
-# --------------------------------------------------------------------------- #
-# Helper conversion functions – they implement the *same* rules that
-# ResponsesRequestAdapter._convert_messages / _format_tool_result_content use.
-# --------------------------------------------------------------------------- #
+# Keys to check for thinking content in additional_kwargs
+THINKING_KEYS = ["reasoning_content", "thinking_content", "reasoning", "thinking"]
 
 
 def _text_block(text: str) -> dict[str, Any]:
@@ -156,8 +154,46 @@ def _content_blocks_from_message(message: AIMessage) -> list[dict[str, Any]]:
         # Anything else – stringify.
         blocks.append(_text_block(str(raw_content)))
 
-    # Note: For v1 format, reasoning summaries are already included above
-    # No need to separately extract reasoning from additional_kwargs
+    # ── Extract thinking content from additional_kwargs (Chat Completions API v0) ──
+    # For Chat Completions API, LangChain ChatOpenAI puts thinking content in additional_kwargs
+    if message.additional_kwargs:
+        log.info(
+            "Found additional_kwargs in message",
+            message_type=type(message).__name__,
+            kwargs_keys=list(message.additional_kwargs.keys()),
+            kwargs_content=message.additional_kwargs,
+            content_preview=str(raw_content)[:200] if raw_content else None,
+        )
+        for key in THINKING_KEYS:
+            if key in message.additional_kwargs:
+                thinking_content = message.additional_kwargs[key]
+                log.info(
+                    "Found thinking content in additional_kwargs",
+                    key=key,
+                    content_preview=thinking_content[:100]
+                    if isinstance(thinking_content, str)
+                    else str(thinking_content)[:100],
+                )
+                blocks.append({"type": "thinking", "thinking": thinking_content})
+                break
+    else:
+        log.info(
+            "No additional_kwargs found in message",
+            message_type=type(message).__name__,
+            content_preview=str(raw_content)[:200] if raw_content else None,
+        )
+
+    # ── Check if thinking tokens are embedded in main content ──
+    # llama.cpp might include thinking tokens like <think>...</think> in main content
+    if isinstance(raw_content, str) and (
+        "<think>" in raw_content or "<thinking>" in raw_content
+    ):
+        log.info(
+            "Found potential thinking tokens in main content",
+            content_preview=raw_content[:200],
+            has_think_tags="<think>" in raw_content,
+            has_thinking_tags="<thinking>" in raw_content,
+        )
 
     return blocks
 
@@ -278,6 +314,7 @@ class LangChainOpenAIResponseAdapter:
     def _non_stream_response(
         self, message: BaseMessage, headers: Mapping[str, str] | None
     ) -> dict[str, Any]:
+
         if not isinstance(message, AIMessage):
             log.error(
                 "Non‑AIMessage supplied to finished response builder",
@@ -403,6 +440,7 @@ class LangChainOpenAIResponseAdapter:
                 log.error("Unexpected non‑AIMessageChunk in stream", type=type(chunk))
                 continue
 
+
             try:
                 # Accumulate chunk into complete message
                 if accumulated_message is None:
@@ -411,6 +449,7 @@ class LangChainOpenAIResponseAdapter:
                     accumulated_message = cast(
                         AIMessageChunk, accumulated_message + chunk
                     )
+
 
                 # Send message start event if not already sent
                 if not message_started:
@@ -432,6 +471,66 @@ class LangChainOpenAIResponseAdapter:
                     }
                     yield f"event: message_start\ndata: {json.dumps(message_start)}\n\n"
                     message_started = True
+
+                # ── Handle thinking content from additional_kwargs first ──
+                if chunk.additional_kwargs:
+                    log.debug(
+                        "Found additional_kwargs in chunk",
+                        kwargs_keys=list(chunk.additional_kwargs.keys()),
+                        kwargs_content=chunk.additional_kwargs,
+                    )
+                    for key in THINKING_KEYS:
+                        if key in chunk.additional_kwargs:
+                            thinking_content = chunk.additional_kwargs[key]
+                            if thinking_content:
+                                log.info(
+                                    "Found thinking content in chunk additional_kwargs",
+                                    key=key,
+                                    content_preview=thinking_content[:100]
+                                    if isinstance(thinking_content, str)
+                                    else str(thinking_content)[:100],
+                                )
+                                # Start thinking content block if not already started
+                                if current_block_type != "thinking":
+                                    # Close current block if it was open
+                                    if current_block_type is not None:
+                                        yield self._stop_content_block(
+                                            content_block_index
+                                        )
+                                        content_block_index += 1
+
+                                    # Start thinking content block
+                                    yield self._start_content_block(
+                                        "thinking",
+                                        content_block_index,
+                                        {"thinking": ""},
+                                    )
+                                    current_block_type = "thinking"
+
+                                # Send thinking delta
+                                yield self._send_thinking_delta(
+                                    content_block_index, thinking_content
+                                )
+                            break
+                else:
+                    log.debug(
+                        "No additional_kwargs found in chunk",
+                        chunk_type=type(chunk).__name__,
+                        chunk_content_preview=str(chunk.content)[:200]
+                        if chunk.content
+                        else None,
+                    )
+
+                # ── Check if thinking tokens are embedded in chunk content ──
+                if isinstance(chunk.content, str) and (
+                    "<think>" in chunk.content or "<thinking>" in chunk.content
+                ):
+                    log.info(
+                        "Found potential thinking tokens in chunk content",
+                        content_preview=chunk.content[:200],
+                        has_think_tags="<think>" in chunk.content,
+                        has_thinking_tags="<thinking>" in chunk.content,
+                    )
 
                 # Handle both text content and structured content (v1 reasoning)
                 if chunk.content:
