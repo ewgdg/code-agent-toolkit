@@ -4,6 +4,7 @@ from typing import Any
 import structlog
 
 from .config import Config
+from .config.schema import ModelConfigEntry
 
 logger = structlog.get_logger(__name__)
 
@@ -16,7 +17,7 @@ class RouterDecision:
         reason: str = "",
         provider: str | None = None,
         adapter: str | None = None,
-        model_config: dict[str, Any] | None = None,
+        model_config: dict[str, Any | ModelConfigEntry] | None = None,
         support_reasoning: bool = False,
     ):
         self.target = target  # "openai" or "anthropic" (kept for backward compat)
@@ -24,7 +25,7 @@ class RouterDecision:
         self.reason = reason
         self.provider = provider or target  # Provider name, defaults to target
         self.adapter = adapter  # Adapter type
-        self.model_config = model_config or {}  # Applied model config from overrides
+        self.model_config = model_config  # Applied model config from overrides
         self.support_reasoning = support_reasoning  # Whether reasoning is supported
 
 
@@ -104,12 +105,8 @@ class ModelRouter:
                         target_model
                     )
 
-                # Apply model config overrides if specified
-                model_config: dict[str, Any] = {}
-                if override.config:
-                    model_config = self._apply_granular_config_overrides(
-                        model_config, override.config
-                    )
+                # Set model config directly from override config
+                model_config: dict[str, Any | ModelConfigEntry] | None = override.config
 
                 # Look up adapter from provider config
                 adapter = self._resolve_adapter(resolved_provider)
@@ -454,7 +451,7 @@ class ModelRouter:
             return "openai-chat-completions"
 
     def _apply_granular_config_overrides(
-        self, target: dict[str, Any], source: dict[str, Any]
+        self, target: dict[str, Any], source: dict[str, Any | ModelConfigEntry]
     ) -> dict[str, Any]:
         """
         Apply configuration overrides with granular priority control.
@@ -466,8 +463,6 @@ class ModelRouter:
         Returns:
             Updated configuration dict
         """
-        from .config.schema import ModelConfigEntry
-
         result = target.copy()
 
         for key, value in source.items():

@@ -24,6 +24,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from ..config import Config, ProviderConfig
+from ..config.schema import ModelConfigEntry
 from ..router import ModelRouter
 
 logger = structlog.get_logger(__name__)
@@ -46,7 +47,7 @@ class LangChainOpenAIRequestAdapter:
         provider_config: ProviderConfig,
         model: str,
         use_responses_api: bool = True,
-        model_config: dict[str, Any] | None = None,
+        model_config: dict[str, Any | ModelConfigEntry] | None = None,
         support_reasoning: bool = False,
     ) -> dict[str, Any]:
         """
@@ -76,12 +77,8 @@ class LangChainOpenAIRequestAdapter:
 
             # Prepare OpenAI request payload (LangChain-executable)
             adapted_request = self._prepare_openai_request(
-                messages, anthropic_request, model
+                messages, anthropic_request, model, model_config
             )
-
-            # Apply model configuration overrides
-            if model_config:
-                adapted_request.update(model_config)
 
             logger.info(
                 "LangChain OpenAI request prepared",
@@ -296,6 +293,7 @@ class LangChainOpenAIRequestAdapter:
         messages: list[BaseMessage],
         anthropic_request: dict[str, Any],
         model: str,
+        model_config: dict[str, Any | ModelConfigEntry] | None = None,
     ) -> dict[str, Any]:
         """Prepare a unified LangChain-executable payload for OpenAI models."""
         # Tools to be bound via LangChain
@@ -312,6 +310,10 @@ class LangChainOpenAIRequestAdapter:
             params["max_tokens"] = anthropic_request["max_tokens"]
         if "stop_sequences" in anthropic_request:
             params["stop"] = anthropic_request["stop_sequences"]
+        
+        # Apply model configuration overrides with proper priority handling
+        if model_config:
+            params = self.router._apply_granular_config_overrides(params, model_config)
 
         return {
             "model": model,
