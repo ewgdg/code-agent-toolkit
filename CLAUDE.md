@@ -128,9 +128,7 @@ providers:
 
 - **Adapter Types**: Available adapter types:
   - `anthropic-passthrough`: Direct forwarding to Anthropic API
-  - `openai-responses`: For OpenAI Responses API (with reasoning capabilities)
-  - `openai-chat-completions`: For standard OpenAI Chat Completions API (llama.cpp, Ollama, LocalAI)
-  - `langchain-openai`: Unified LangChain-based adapter for OpenAI compatibility
+  - `openai`: Unified LangChain-based adapter for OpenAI compatibility
 - Plan mode detection is configured via override rules using `system_regex: r"\bplan mode is (activated|triggered|on)\b"` to detect when Claude Code enters plan mode
 - Provider resolution precedence: explicit rule provider > model prefix parsing > "anthropic" default
 - All requests include request IDs for tracing and debugging

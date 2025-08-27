@@ -1,6 +1,5 @@
 """Tests for the custom ChatOpenAI class with custom field extraction."""
 
-
 from src.claude_router.adapters.custom_chatopenai import (
     STANDARD_OPENAI_FIELDS,
     ChatOpenAIWithCustomFields,
@@ -62,7 +61,7 @@ class TestChatOpenAIWithCustomFields:
                     "message": {
                         "content": "This is the main response",
                         "role": "assistant",
-                        "finish_reason": "stop"
+                        "finish_reason": "stop",
                     }
                 }
             ]
@@ -100,23 +99,22 @@ class TestChatOpenAIWithCustomFields:
                     "message": {
                         "role": "assistant",
                         "content": "This is the main response",
-                        "reasoning_content": "This is custom reasoning"
+                        "reasoning_content": "This is custom reasoning",
                     },
-                    "finish_reason": "stop"
+                    "finish_reason": "stop",
                 }
             ],
-            "usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 20,
-                "total_tokens": 30
-            }
+            "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
         }
 
         result = chat_model._create_chat_result(response)
 
         # Check that custom fields were added to additional_kwargs
         assert "reasoning_content" in result.generations[0].message.additional_kwargs
-        assert result.generations[0].message.additional_kwargs["reasoning_content"] == "This is custom reasoning"
+        assert (
+            result.generations[0].message.additional_kwargs["reasoning_content"]
+            == "This is custom reasoning"
+        )
 
     def test_extract_custom_fields_from_chunk_success(self):
         """Test extraction of custom fields from streaming chunk."""
@@ -124,13 +122,7 @@ class TestChatOpenAIWithCustomFields:
 
         # Mock streaming chunk with reasoning_content in delta (realistic format)
         mock_chunk = {
-            "choices": [
-                {
-                    "delta": {
-                        "reasoning_content": "Streaming reasoning content"
-                    }
-                }
-            ]
+            "choices": [{"delta": {"reasoning_content": "Streaming reasoning content"}}]
         }
 
         custom_fields = chat_model._extract_custom_fields_from_dict(mock_chunk)
@@ -149,7 +141,7 @@ class TestChatOpenAIWithCustomFields:
                     "message": {
                         "reasoning_content": "This is reasoning",
                         "thinking_content": "This is thinking",
-                        "metadata": "This is metadata"
+                        "metadata": "This is metadata",
                     }
                 }
             ]

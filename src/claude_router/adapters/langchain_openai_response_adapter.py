@@ -316,7 +316,6 @@ class LangChainOpenAIResponseAdapter:
     def _non_stream_response(
         self, message: BaseMessage, headers: Mapping[str, str] | None
     ) -> dict[str, Any]:
-
         if not isinstance(message, AIMessage):
             log.error(
                 "Non‑AIMessage supplied to finished response builder",
@@ -457,7 +456,6 @@ class LangChainOpenAIResponseAdapter:
                 log.error("Unexpected non‑AIMessageChunk in stream", type=type(chunk))
                 continue
 
-
             try:
                 # Accumulate chunk into complete message
                 if accumulated_message is None:
@@ -466,7 +464,6 @@ class LangChainOpenAIResponseAdapter:
                     accumulated_message = cast(
                         AIMessageChunk, accumulated_message + chunk
                     )
-
 
                 # Send message start event if not already sent
                 if not message_started:

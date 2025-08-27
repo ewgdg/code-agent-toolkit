@@ -21,7 +21,7 @@ def provider_config():
     """Create provider config for testing."""
     return ProviderConfig(
         base_url="http://localhost:8080/v1",
-        adapter="openai-chat-completions",
+        adapter="openai",
         api_key_env="TEST_API_KEY",
         timeouts_ms=TimeoutsConfig(connect=5000, read=30000),
     )

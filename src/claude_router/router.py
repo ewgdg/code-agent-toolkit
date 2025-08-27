@@ -446,9 +446,9 @@ class ModelRouter:
             # For unknown providers, assume they're OpenAI-compatible
             logger.warning(
                 f"Unknown provider '{provider}', defaulting to "
-                "openai-chat-completions adapter"
+                "openai adapter"
             )
-            return "openai-chat-completions"
+            return "openai"
 
     def _apply_granular_config_overrides(
         self, target: dict[str, Any], source: dict[str, Any | ModelConfigEntry]

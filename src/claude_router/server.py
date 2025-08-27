@@ -169,7 +169,7 @@ class ProxyRouter:
                     return await self.passthrough_adapter.handle_request(
                         method, f"/{path}", headers, body, query_params
                     )
-                elif decision.adapter == "langchain-openai":
+                elif decision.adapter == "openai":
                     return await self.unified_langchain_adapter.handle_request(
                         request_data, decision, headers, request_id
                     )

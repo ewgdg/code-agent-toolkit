@@ -77,7 +77,12 @@ class LangChainOpenAIRequestAdapter:
 
             # Prepare OpenAI request payload (LangChain-executable)
             adapted_request = self._prepare_openai_request(
-                messages, anthropic_request, model, model_config
+                messages,
+                anthropic_request,
+                model,
+                model_config,
+                use_responses_api=use_responses_api,
+                support_reasoning=support_reasoning,
             )
 
             logger.info(
@@ -301,6 +306,8 @@ class LangChainOpenAIRequestAdapter:
         anthropic_request: dict[str, Any],
         model: str,
         model_config: dict[str, Any | ModelConfigEntry] | None = None,
+        use_responses_api: bool = True,
+        support_reasoning: bool = False,
     ) -> dict[str, Any]:
         """Prepare a unified LangChain-executable payload for OpenAI models."""
         # Tools to be bound via LangChain
@@ -317,6 +324,23 @@ class LangChainOpenAIRequestAdapter:
             params["max_tokens"] = anthropic_request["max_tokens"]
         if "stop_sequences" in anthropic_request:
             params["stop"] = anthropic_request["stop_sequences"]
+
+        # Add reasoning effort for supported models (OpenAI o1-style reasoning)
+        if support_reasoning or self.config.openai.supports_reasoning(model):
+            reasoning_effort = self.router.get_reasoning_effort(anthropic_request)
+            logger.info(
+                "Reasoning effort calculated",
+                effort=reasoning_effort,
+                model=model,
+            )
+            if use_responses_api:
+                # Always include reasoning config, even for minimal effort
+                reasoning_config = {"effort": reasoning_effort}
+                if reasoning_effort != "minimal":
+                    reasoning_config["summary"] = "auto"
+                params["reasoning"] = reasoning_config
+            else:
+                params["reasoning_effort"] = reasoning_effort
 
         # Apply model configuration overrides with proper priority handling
         if model_config:
@@ -388,12 +412,14 @@ class LangChainOpenAIRequestAdapter:
                     raise Exception("Unexpected Langchain behavior.")
                 bind_tools_method(tools=tools)
 
+            reasoning_config = params.get("reasoning") or params.get("reasoning_effort")
             logger.info(
                 "Invoking LangChain ChatOpenAI",
                 base_url=provider_config.base_url,
                 model=target_model,
                 stream=stream,
                 has_tools=bool(tools),
+                has_reasoning=bool(reasoning_config),
             )
 
             if stream:

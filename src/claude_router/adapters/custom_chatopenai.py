@@ -160,7 +160,11 @@ class ChatOpenAIWithCustomFields(ChatOpenAI):
 
         # Extract custom fields from the raw response using shared method
         # Convert BaseModel to dict if needed
-        response_dict = response.model_dump() if isinstance(response, openai.BaseModel) else response
+        response_dict = (
+            response.model_dump()
+            if isinstance(response, openai.BaseModel)
+            else response
+        )
         custom_fields = self._extract_custom_fields_from_dict(response_dict)
 
         # Add custom fields to the message's additional_kwargs if any were found
@@ -172,7 +176,10 @@ class ChatOpenAIWithCustomFields(ChatOpenAI):
 
     @override
     def _convert_chunk_to_generation_chunk(
-        self, chunk: dict[str, Any], default_chunk_class: type, base_generation_info: dict[str, Any] | None
+        self,
+        chunk: dict[str, Any],
+        default_chunk_class: type,
+        base_generation_info: dict[str, Any] | None,
     ) -> ChatGenerationChunk | None:
         """Override to extract custom fields from Chat Completions API streaming chunks."""
         # Call parent method first to get the standard generation chunk

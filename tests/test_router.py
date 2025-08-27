@@ -589,7 +589,7 @@ class TestModelRouter:
         self.config.providers = {
             "llama-local": ProviderConfig(
                 base_url="http://localhost:8080/v1",
-                adapter="openai-chat-completions",
+                adapter="openai",
                 api_key_env="LLAMA_API_KEY",
             )
         }
@@ -611,7 +611,7 @@ class TestModelRouter:
         assert decision.target == "llama-local"
         assert decision.model == "llama3.1"
         assert decision.provider == "llama-local"
-        assert decision.adapter == "openai-chat-completions"
+        assert decision.adapter == "openai"
         assert "override rule 1 matched" in decision.reason.lower()
 
     def test_provider_resolution_from_model_prefix(self):
@@ -633,7 +633,7 @@ class TestModelRouter:
         assert decision.adapter == "openai-responses"  # default for openai
 
     def test_provider_unknown_defaults_to_chat_completions(self):
-        """Test that unknown providers default to openai-chat-completions adapter."""
+        """Test that unknown providers default to openai adapter."""
         self.config.overrides = [
             OverrideRule(
                 when={"request": {"model_regex": "test"}},
@@ -650,7 +650,7 @@ class TestModelRouter:
         assert decision.target == "unknown-provider"
         assert decision.model == "unknown-model"
         assert decision.provider == "unknown-provider"
-        assert decision.adapter == "openai-chat-completions"  # default for unknown
+        assert decision.adapter == "openai"  # default for unknown
 
     def test_default_anthropic_passthrough_fields(self):
         """Test default routing includes correct provider and adapter fields."""

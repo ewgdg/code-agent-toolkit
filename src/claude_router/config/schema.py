@@ -98,10 +98,7 @@ class LoggingConfig(BaseModel):
 
 class ProviderConfig(BaseModel):
     base_url: str = Field(description="Base URL for the provider API")
-    adapter: str = Field(
-        description="Adapter type: anthropic-passthrough, openai-responses, "
-        "openai-chat-completions, langchain-openai"
-    )
+    adapter: str = Field(description="Adapter type: anthropic-passthrough, openai")
     api_key_env: str | None = Field(
         default=None, description="Environment variable name for API key"
     )
@@ -110,7 +107,7 @@ class ProviderConfig(BaseModel):
     )
     use_responses_api: bool = Field(
         default=True,
-        description="For langchain-openai adapter: True for Responses API, "
+        description="For openai adapter: True for Responses API, "
         "False for Chat Completions API",
     )
 
@@ -119,9 +116,7 @@ class ProviderConfig(BaseModel):
     def validate_adapter(cls, v: str) -> str:
         valid_adapters = [
             "anthropic-passthrough",
-            "openai-responses",
-            "openai-chat-completions",
-            "langchain-openai",
+            "openai",
         ]
         if v not in valid_adapters:
             raise ValueError(f"adapter must be one of: {', '.join(valid_adapters)}")
