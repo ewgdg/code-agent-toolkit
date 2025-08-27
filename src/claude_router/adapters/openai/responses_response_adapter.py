@@ -1,6 +1,7 @@
 import json
 from collections.abc import AsyncIterator
 from typing import Any
+from warnings import deprecated
 
 import structlog
 from openai.types.responses import (
@@ -27,6 +28,7 @@ from ...config import Config
 logger = structlog.get_logger(__name__)
 
 
+@deprecated("Please use the unified LangChain adapters instead.")
 class ResponsesResponseAdapter:
     def __init__(self, config: Config):
         self.config = config

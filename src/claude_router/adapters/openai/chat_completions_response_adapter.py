@@ -1,6 +1,7 @@
 import json
 from collections.abc import AsyncIterator
 from typing import Any
+from warnings import deprecated
 
 import structlog
 from openai import AsyncStream
@@ -10,6 +11,7 @@ from openai.types.completion_usage import CompletionUsage
 logger = structlog.get_logger(__name__)
 
 
+@deprecated("Please use the unified LangChain adapters instead.")
 class ChatCompletionsResponseAdapter:
     """Adapter translating OpenAI Chat Completions API responses to Anthropic format."""
 

@@ -441,7 +441,7 @@ class ModelRouter:
         if provider == "anthropic":
             return "anthropic-passthrough"
         elif provider == "openai":
-            return "openai-responses"
+            return "openai"
         else:
             # For unknown providers, assume they're OpenAI-compatible
             logger.warning(

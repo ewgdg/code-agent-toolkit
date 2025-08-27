@@ -50,9 +50,7 @@ uv run ruff check src/ tests/ --fix
 - **Provider System** (`src/claude_router/config/schema.py`): Configurable provider definitions with base URLs, adapters, and API keys
 - **Request/Response Adapters** (`src/claude_router/adapters/`): Translate between API formats
   - `PassthroughAdapter`: Direct forwarding to Anthropic API
-  - `AnthropicOpenAIRequestAdapter` + `OpenAIAnthropicResponseAdapter`: Converts to OpenAI Responses API format
-  - `OpenAIChatCompletionsRequestAdapter` + `ChatCompletionsAnthropicResponseAdapter`: Converts to OpenAI Chat Completions API format (for llama.cpp, Ollama, etc.)
-  - `LangChainOpenAIRequestAdapter` + `LangChainResponsesResponseAdapter`: Unified LangChain-based adapters for OpenAI compatibility
+  - `UnifiedLangChainAdapter`: Unified LangChain-based adapters for OpenAI compatibility
 
 ### Routing Logic
 
@@ -96,11 +94,11 @@ Override rules support various `when` conditions:
 providers:
   openai:
     base_url: "https://api.openai.com/v1"
-    adapter: "openai-responses"
+    adapter: "openai"
     api_key_env: "OPENAI_API_KEY"
   llama-local:
     base_url: "http://localhost:8080/v1"
-    adapter: "openai-chat-completions"
+    adapter: "openai"
     api_key_env: "LLAMA_API_KEY"  # optional
     timeouts_ms:
       connect: 3000
@@ -117,7 +115,7 @@ providers:
 ### Key Features
 
 - **Hot reload**: Configuration changes are picked up automatically
-- **Multi-adapter support**: Three adapter types for different API compatibility levels
+- **Multi-adapter support**: Two adapter types for different API compatibility levels
 - **Streaming support**: Handles both streaming and non-streaming responses
 - **Request translation**: Full conversion between Anthropic and OpenAI API formats
 - **Reasoning effort mapping**: Maps token budgets to OpenAI reasoning effort levels
@@ -154,8 +152,6 @@ The `ModelRouter.decide_route()` method is the main entry point that processes o
 The server dispatches requests to different handlers based on the adapter type:
 
 - `_handle_passthrough_request()` for Anthropic passthrough
-- `_handle_openai_request()` for OpenAI Responses API
-- `_handle_openai_chat_completions_request()` for OpenAI Chat Completions API
 - `_handle_langchain_openai_request()` for LangChain-based OpenAI compatibility
 
 ## Typing Rules

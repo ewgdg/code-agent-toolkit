@@ -7,7 +7,7 @@ router:
 providers:
   openai:
     base_url: "https://api.openai.com/v1"
-    adapter: "openai-responses"
+    adapter: "openai"
     api_key_env: "OPENAI_API_KEY"
 
 openai:

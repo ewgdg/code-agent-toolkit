@@ -630,7 +630,7 @@ class TestModelRouter:
         assert decision.target == "openai"
         assert decision.model == "gpt-4o"
         assert decision.provider == "openai"
-        assert decision.adapter == "openai-responses"  # default for openai
+        assert decision.adapter == "openai"  # default for openai
 
     def test_provider_unknown_defaults_to_chat_completions(self):
         """Test that unknown providers default to openai adapter."""

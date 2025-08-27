@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Any
+from warnings import deprecated
 
 import structlog
 from openai import AsyncOpenAI, AsyncStream
@@ -12,6 +13,7 @@ from ...router import ModelRouter
 logger = structlog.get_logger(__name__)
 
 
+@deprecated("Please use the unified LangChain adapters instead.")
 class ResponsesRequestAdapter:
     def __init__(self, config: Config, router: ModelRouter):
         self.config = config
