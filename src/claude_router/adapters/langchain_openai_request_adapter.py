@@ -19,6 +19,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from langchain_core.runnables import ConfigurableField, RunnableSerializable
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
@@ -39,7 +40,7 @@ class LangChainOpenAIRequestAdapter:
     def __init__(self, config: Config, router: ModelRouter):
         self.config = config
         self.router = router
-        self._model_cache: dict[str, ChatOpenAI] = {}
+        self._model_cache: dict[str, RunnableSerializable] = {}
 
     async def adapt_request(
         self,
@@ -103,8 +104,10 @@ class LangChainOpenAIRequestAdapter:
             raise ValueError(f"Request adaptation failed: {e}") from e
 
     def _get_langchain_model(
-        self, provider_config: ProviderConfig, model: str
-    ) -> ChatOpenAI:
+        self,
+        provider_config: ProviderConfig,
+        model: str,
+    ) -> RunnableSerializable:
         """Create or retrieve cached LangChain model instance."""
         cache_key = f"{provider_config.base_url}:{model}"
 
@@ -128,6 +131,10 @@ class LangChainOpenAIRequestAdapter:
             base_url=provider_config.base_url,
             timeout=timeout_seconds,
             stream_usage=True,
+            use_responses_api=True,
+            output_version="responses/v1",
+        ).configurable_fields(
+            use_responses_api=ConfigurableField(id="use_responses_api")
         )
 
         self._model_cache[cache_key] = langchain_model
@@ -173,10 +180,11 @@ class LangChainOpenAIRequestAdapter:
                         content_parts.append(_text_block(block.get("text", "")))
 
                     elif btype == "thinking":
-                        thinking = block.get("thinking", "")
-                        if thinking:
-                            thinking = "<think>" + thinking + "</think>"
-                            content_parts.append(_text_block(thinking))
+                        # thinking = block.get("thinking", "")
+                        # if thinking:
+                        #     thinking = "<think>" + thinking + "</think>"
+                        #     content_parts.append(_text_block(thinking))
+                        pass
 
                     elif btype == "tool_use":
                         # Only valid on assistant turns; collect into tool_calls
@@ -310,7 +318,7 @@ class LangChainOpenAIRequestAdapter:
             params["max_tokens"] = anthropic_request["max_tokens"]
         if "stop_sequences" in anthropic_request:
             params["stop"] = anthropic_request["stop_sequences"]
-        
+
         # Apply model configuration overrides with proper priority handling
         if model_config:
             params = self.router._apply_granular_config_overrides(params, model_config)
@@ -365,12 +373,21 @@ class LangChainOpenAIRequestAdapter:
 
             # Build/lookup LC model and apply params + tools
             lc_model = self._get_langchain_model(provider_config, target_model)
-            if tools:
-                # Bind OpenAI function tools schema for tool calling support
-                lc_model = lc_model.bind_tools(tools=tools)
+
+            # Bind any model call parameters (temperature, max_tokens, etc)
+            lc_model = lc_model.with_config(
+                config={"configurable": {"use_responses_api": use_responses_api}},
+            )
+
             if params:
-                # Bind any model call parameters (temperature, max_tokens, etc)
                 lc_model = lc_model.bind(**params)
+
+            if tools:
+                # langchain runnable should forward the bound model attributes
+                bind_tools_method = getattr(lc_model, "bind_tools", None)
+                if not bind_tools_method:
+                    raise Exception("Unexpected Langchain behavior.")
+                bind_tools_method(tools=tools)
 
             logger.info(
                 "Invoking LangChain ChatOpenAI",
