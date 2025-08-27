@@ -20,13 +20,12 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langchain_core.runnables import ConfigurableField, RunnableSerializable
-from langchain_core.utils.function_calling import convert_to_openai_tool
-from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from ..config import Config, ProviderConfig
 from ..config.schema import ModelConfigEntry
 from ..router import ModelRouter
+from .custom_chatopenai import ChatOpenAIWithCustomFields
 
 logger = structlog.get_logger(__name__)
 
@@ -123,9 +122,9 @@ class LangChainOpenAIRequestAdapter:
         timeouts = provider_config.timeouts_ms or self.config.timeouts_ms
         timeout_seconds = timeouts.read / 1000
 
-        # Create LangChain OpenAI model
-        # ChatOpenAI expects pydantic.SecretStr for api_key; wrap string if present
-        langchain_model = ChatOpenAI(
+        # Create LangChain OpenAI model with custom field extraction
+        # ChatOpenAIWithCustomFields expects pydantic.SecretStr for api_key; wrap string if present
+        langchain_model = ChatOpenAIWithCustomFields(
             model=model,
             api_key=SecretStr(api_key) if api_key is not None else None,
             base_url=provider_config.base_url,

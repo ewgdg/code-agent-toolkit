@@ -33,8 +33,13 @@ from ..router import ModelRouter
 
 log = structlog.get_logger(__name__)
 
-# Keys to check for thinking content in additional_kwargs
-THINKING_KEYS = ["reasoning_content", "thinking_content", "reasoning", "thinking"]
+# Configuration for custom field parsing
+CUSTOM_FIELD_MAPPING = {
+    "reasoning_content": {"block_type": "thinking", "field_name": "thinking"},
+    "thinking_content": {"block_type": "thinking", "field_name": "thinking"},
+    "reasoning": {"block_type": "thinking", "field_name": "thinking"},
+    "thinking": {"block_type": "thinking", "field_name": "thinking"},
+}
 
 
 def _text_block(text: str) -> dict[str, Any]:
@@ -85,6 +90,21 @@ def _function_call_block(name: str, args: Any, call_id: str) -> dict[str, Any]:
     return result
 
 
+def _custom_field_block(field_key: str, field_value: Any) -> dict[str, Any] | None:
+    """Create a custom field block based on configuration mapping."""
+    if field_key not in CUSTOM_FIELD_MAPPING:
+        return None
+
+    config = CUSTOM_FIELD_MAPPING[field_key]
+    block_type = config["block_type"]
+    field_name = config["field_name"]
+
+    return {
+        "type": block_type,
+        field_name: str(field_value),
+    }
+
+
 def _function_output_block(call_id: str, output: Any) -> dict[str, Any]:
     """Anthropic representation of a tool result."""
     if isinstance(output, str):
@@ -109,7 +129,7 @@ def _content_blocks_from_message(message: AIMessage) -> list[dict[str, Any]]:
     """
     blocks: list[dict[str, Any]] = []
 
-    # ── 1️⃣  Text / image / mixed list -----------------
+    # ── Text / image / mixed list -----------------
     raw_content = message.content
     if isinstance(raw_content, str):
         # Simple string → single text block
@@ -154,46 +174,28 @@ def _content_blocks_from_message(message: AIMessage) -> list[dict[str, Any]]:
         # Anything else – stringify.
         blocks.append(_text_block(str(raw_content)))
 
-    # ── Extract thinking content from additional_kwargs (Chat Completions API v0) ──
-    # For Chat Completions API, LangChain ChatOpenAI puts thinking content in additional_kwargs
+    # ── Extract custom fields from additional_kwargs ──
+    # For Chat Completions API, LangChain ChatOpenAI puts custom fields in additional_kwargs
     if message.additional_kwargs:
-        log.info(
+        log.debug(
             "Found additional_kwargs in message",
             message_type=type(message).__name__,
             kwargs_keys=list(message.additional_kwargs.keys()),
             kwargs_content=message.additional_kwargs,
-            content_preview=str(raw_content)[:200] if raw_content else None,
+            content_preview=str(raw_content)[:100] if raw_content else None,
         )
-        for key in THINKING_KEYS:
-            if key in message.additional_kwargs:
-                thinking_content = message.additional_kwargs[key]
-                log.info(
-                    "Found thinking content in additional_kwargs",
-                    key=key,
-                    content_preview=thinking_content[:100]
-                    if isinstance(thinking_content, str)
-                    else str(thinking_content)[:100],
-                )
-                blocks.append({"type": "thinking", "thinking": thinking_content})
-                break
-    else:
-        log.info(
-            "No additional_kwargs found in message",
-            message_type=type(message).__name__,
-            content_preview=str(raw_content)[:200] if raw_content else None,
-        )
-
-    # ── Check if thinking tokens are embedded in main content ──
-    # llama.cpp might include thinking tokens like <think>...</think> in main content
-    if isinstance(raw_content, str) and (
-        "<think>" in raw_content or "<thinking>" in raw_content
-    ):
-        log.info(
-            "Found potential thinking tokens in main content",
-            content_preview=raw_content[:200],
-            has_think_tags="<think>" in raw_content,
-            has_thinking_tags="<thinking>" in raw_content,
-        )
+        # Process all configured custom fields
+        for key, value in message.additional_kwargs.items():
+            if value:  # Only process non-empty values
+                custom_block = _custom_field_block(key, value)
+                if custom_block:
+                    log.info(
+                        "Found custom field in additional_kwargs",
+                        key=key,
+                        block_type=custom_block["type"],
+                        content_preview=str(value)[:100],
+                    )
+                    blocks.append(custom_block)
 
     return blocks
 
@@ -403,6 +405,21 @@ class LangChainOpenAIResponseAdapter:
         event_data = json.dumps(thinking_delta)
         return f"event: content_block_delta\ndata: {event_data}\n\n"
 
+    def _send_delta(
+        self, index: int, block_type: str, field_name: str, value: str
+    ) -> str:
+        """Send a custom field delta and return the SSE event string."""
+        custom_delta = {
+            "type": "content_block_delta",
+            "index": index,
+            "delta": {
+                "type": f"{block_type}_delta",
+                field_name: value,
+            },
+        }
+        event_data = json.dumps(custom_delta)
+        return f"event: content_block_delta\ndata: {event_data}\n\n"
+
     async def _stream_response(
         self,
         chunk_iter: AsyncIterator[BaseMessageChunk],
@@ -472,26 +489,18 @@ class LangChainOpenAIResponseAdapter:
                     yield f"event: message_start\ndata: {json.dumps(message_start)}\n\n"
                     message_started = True
 
-                # ── Handle thinking content from additional_kwargs first ──
+                # ── Handle custom fields from additional_kwargs first ──
                 if chunk.additional_kwargs:
-                    log.debug(
-                        "Found additional_kwargs in chunk",
-                        kwargs_keys=list(chunk.additional_kwargs.keys()),
-                        kwargs_content=chunk.additional_kwargs,
-                    )
-                    for key in THINKING_KEYS:
-                        if key in chunk.additional_kwargs:
-                            thinking_content = chunk.additional_kwargs[key]
-                            if thinking_content:
-                                log.info(
-                                    "Found thinking content in chunk additional_kwargs",
-                                    key=key,
-                                    content_preview=thinking_content[:100]
-                                    if isinstance(thinking_content, str)
-                                    else str(thinking_content)[:100],
-                                )
-                                # Start thinking content block if not already started
-                                if current_block_type != "thinking":
+                    # Process all configured custom fields
+                    for key, value in chunk.additional_kwargs.items():
+                        if value:  # Only process non-empty values
+                            custom_block = _custom_field_block(key, value)
+                            if custom_block:
+                                block_type = custom_block["type"]
+                                field_name = CUSTOM_FIELD_MAPPING[key]["field_name"]
+
+                                # Start custom field content block if not already started
+                                if current_block_type != block_type:
                                     # Close current block if it was open
                                     if current_block_type is not None:
                                         yield self._stop_content_block(
@@ -499,38 +508,19 @@ class LangChainOpenAIResponseAdapter:
                                         )
                                         content_block_index += 1
 
-                                    # Start thinking content block
+                                    # Start custom field content block
+                                    start_data = {field_name: ""}
                                     yield self._start_content_block(
-                                        "thinking",
+                                        block_type,
                                         content_block_index,
-                                        {"thinking": ""},
+                                        start_data,
                                     )
-                                    current_block_type = "thinking"
+                                    current_block_type = block_type
 
-                                # Send thinking delta
-                                yield self._send_thinking_delta(
-                                    content_block_index, thinking_content
+                                # Send custom field delta
+                                yield self._send_delta(
+                                    content_block_index, block_type, field_name, value
                                 )
-                            break
-                else:
-                    log.debug(
-                        "No additional_kwargs found in chunk",
-                        chunk_type=type(chunk).__name__,
-                        chunk_content_preview=str(chunk.content)[:200]
-                        if chunk.content
-                        else None,
-                    )
-
-                # ── Check if thinking tokens are embedded in chunk content ──
-                if isinstance(chunk.content, str) and (
-                    "<think>" in chunk.content or "<thinking>" in chunk.content
-                ):
-                    log.info(
-                        "Found potential thinking tokens in chunk content",
-                        content_preview=chunk.content[:200],
-                        has_think_tags="<think>" in chunk.content,
-                        has_thinking_tags="<thinking>" in chunk.content,
-                    )
 
                 # Handle both text content and structured content (v1 reasoning)
                 if chunk.content:
@@ -726,6 +716,25 @@ class LangChainOpenAIResponseAdapter:
         if accumulated_message:
             finish_reason = _finish_reason_from_message(accumulated_message)
             usage = _usage_from_message(accumulated_message)
+
+            # Debug log accumulated additional_kwargs after stream is complete
+            if accumulated_message.additional_kwargs:
+                # Process custom fields for logging
+                custom_fields_summary = {}
+                for key, value in accumulated_message.additional_kwargs.items():
+                    if key in CUSTOM_FIELD_MAPPING:
+                        custom_fields_summary[key] = {
+                            "block_type": CUSTOM_FIELD_MAPPING[key]["block_type"],
+                            "content_preview": str(value)[:100] if value else "",
+                            "content_length": len(str(value)) if value else 0,
+                        }
+
+                log.debug(
+                    "Custom fields processed in accumulated message",
+                    kwargs_keys=list(accumulated_message.additional_kwargs.keys()),
+                    custom_fields_summary=custom_fields_summary,
+                    total_custom_fields=len(custom_fields_summary),
+                )
 
             if accumulated_message.tool_calls:
                 log.debug(
