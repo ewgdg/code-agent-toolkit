@@ -19,6 +19,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
@@ -96,12 +97,11 @@ class LangChainOpenAIRequestAdapter:
             return adapted_request
 
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "Failed to adapt request",
                 error=str(e),
                 model=model,
                 use_responses_api=use_responses_api,
-                anthropic_request=anthropic_request,
             )
             raise ValueError(f"Request adaptation failed: {e}") from e
 
@@ -148,6 +148,10 @@ class LangChainOpenAIRequestAdapter:
         - For assistant messages, collects tool_use blocks into AIMessage.tool_calls
         - Emits a HumanMessage (role=user) or AIMessage (role=assistant) if text and/or tool_calls exist
         """
+
+        def _text_block(text: str) -> dict[str, str]:
+            return {"type": "text", "text": text}
+
         messages: list[BaseMessage] = []
 
         # Conversation messages
@@ -169,13 +173,13 @@ class LangChainOpenAIRequestAdapter:
                     btype = block.get("type")
 
                     if btype == "text":
-                        content_parts.append(block.get("text", ""))
+                        content_parts.append(_text_block(block.get("text", "")))
 
                     elif btype == "thinking":
                         thinking = block.get("thinking", "")
                         if thinking:
                             thinking = "<think>" + thinking + "</think>"
-                            content_parts.append(thinking)
+                            content_parts.append(_text_block(thinking))
 
                     elif btype == "tool_use":
                         # Only valid on assistant turns; collect into tool_calls
@@ -226,15 +230,17 @@ class LangChainOpenAIRequestAdapter:
                     else:
                         # Fallback unknown block -> stringify
                         content_parts.append(
-                            block.get("text", "") if "text" in block else str(block)
+                            _text_block(
+                                block.get("text", "") if "text" in block else str(block)
+                            )
                         )
 
                 elif isinstance(block, str):
-                    content_parts.append(block)
+                    content_parts.append(_text_block(block))
 
                 else:
                     # Any other primitive or object -> stringify
-                    content_parts.append(str(block))
+                    content_parts.append(_text_block(str(block)))
 
             if role == "system":
                 if content_parts:
@@ -249,7 +255,7 @@ class LangChainOpenAIRequestAdapter:
                 messages.append(
                     AIMessage(
                         content=content_parts,
-                        tool_calls=tool_calls if tool_calls else None,
+                        tool_calls=[] if tool_calls is None else tool_calls,
                     )
                 )
 
@@ -308,7 +314,6 @@ class LangChainOpenAIRequestAdapter:
             params["stop"] = anthropic_request["stop_sequences"]
 
         return {
-            "__langchain__": True,
             "model": model,
             "messages": messages,  # LangChain BaseMessage list
             "tools": lc_tools,  # OpenAI-style function tool schema for tool calling
@@ -326,17 +331,16 @@ class LangChainOpenAIRequestAdapter:
         """
         openai_tools = []
         for tool in anthropic_tools:
-            # Use LangChain's tool schema conversion approach
-            openai_tools.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": tool.get("name"),
-                        "description": tool.get("description", ""),
-                        "parameters": tool.get("input_schema", {}),
-                    },
-                }
-            )
+            openai_tool = {
+                "type": "function",
+                "function": {
+                    "name": tool.get("name"),
+                    "description": tool.get("description", ""),
+                    "parameters": tool.get("input_schema", {}),
+                },
+            }
+            # openai_tool = convert_to_openai_tool(tool=tool)
+            openai_tools.append(openai_tool)
 
         return openai_tools
 
@@ -384,7 +388,7 @@ class LangChainOpenAIRequestAdapter:
                 return await lc_model.ainvoke(lc_messages)
 
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "API request failed",
                 error=str(e),
                 api_type="responses" if use_responses_api else "chat_completions",

@@ -23,6 +23,7 @@ dependencies = [
     # LangChain dependencies for POC
     "langchain-core>=0.3.0",
     "langchain-openai>=0.2.0",
+    "langchain-community",
 ]
 
 [project.optional-dependencies]

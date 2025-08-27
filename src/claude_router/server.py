@@ -87,7 +87,7 @@ class ProxyRouter:
         self, e: Exception, request_id: str, context: str
     ) -> None:
         """Common error handling logic for adapters."""
-        logger.error(
+        logger.exception(
             f"{context} error",
             request_id=request_id,
             error=str(e),
@@ -182,7 +182,7 @@ class ProxyRouter:
                 self._handle_adapter_error(e, request_id, f"{decision.adapter} request")
 
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "Request handling error",
                 request_id=request_id,
                 error=str(e),

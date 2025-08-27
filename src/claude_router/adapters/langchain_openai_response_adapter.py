@@ -77,12 +77,14 @@ def _function_call_block(name: str, args: Any, call_id: str) -> dict[str, Any]:
     else:
         input_data = {"raw_arguments": str(args)}
 
-    return {
+    result = {
         "type": "tool_use",
         "id": call_id,
         "name": name,
         "input": input_data,
     }
+
+    return result
 
 
 def _function_output_block(call_id: str, output: Any) -> dict[str, Any]:
@@ -386,6 +388,9 @@ class LangChainOpenAIResponseAdapter:
         )
         request_id = None
 
+        # Track tool call metadata by index for consistent streaming
+        tool_call_map: dict[int, dict[str, str]] = {}
+
         # Accumulate message for final metadata extraction
         accumulated_message: AIMessageChunk | None = None
 
@@ -525,7 +530,33 @@ class LangChainOpenAIResponseAdapter:
                 # Handle tool call chunks (sequential processing like other content blocks)
                 if chunk.tool_call_chunks:
                     for tool_chunk in chunk.tool_call_chunks:
-                        call_id = tool_chunk.get("id") or str(uuid.uuid4())
+                        chunk_index = tool_chunk.get("index") or 0
+
+                        # Build tool call map: store name/id from first chunk with these values
+                        tool_name = tool_chunk.get("name")
+                        call_id = tool_chunk.get("id")
+                        if tool_name and call_id:
+                            tool_call_map[chunk_index] = {
+                                "name": tool_name,
+                                "id": call_id,
+                            }
+
+                        # Get consistent metadata from map
+                        elif chunk_index in tool_call_map:
+                            tool_name = tool_call_map[chunk_index]["name"]
+                            call_id = tool_call_map[chunk_index]["id"]
+                        else:
+                            # This should not happen - first chunk should have name/id
+                            log.error(
+                                "Tool call chunk missing metadata",
+                                chunk_index=chunk_index,
+                                tool_chunk=tool_chunk,
+                                tool_call_map=tool_call_map,
+                            )
+                            raise ValueError(
+                                f"Tool call chunk at index {chunk_index} missing name/id metadata. "
+                                f"First chunk should contain tool name and ID."
+                            )
 
                         # Start new tool use block if we're not already in one or if this is a new tool call
                         if (
@@ -538,14 +569,27 @@ class LangChainOpenAIResponseAdapter:
                                 content_block_index += 1
 
                             # Start tool use block
+                            tool_start_block = {
+                                "id": call_id,
+                                "name": tool_name,
+                                "input": {},
+                            }
+
+                            # Log all tool use block starts
+                            log.debug(
+                                "Starting tool_use content block",
+                                tool_name=tool_name,
+                                call_id=call_id,
+                                chunk_index=chunk_index,
+                                tool_chunk=tool_chunk,
+                                content_block_index=content_block_index,
+                                tool_start_block=tool_start_block,
+                            )
+
                             yield self._start_content_block(
                                 "tool_use",
                                 content_block_index,
-                                {
-                                    "id": call_id,
-                                    "name": tool_chunk.get("name", ""),
-                                    "input": {},
-                                },
+                                tool_start_block,
                             )
                             current_block_type = "tool_use"
                             current_tool_call_id = call_id
@@ -567,6 +611,7 @@ class LangChainOpenAIResponseAdapter:
                                     "partial_json": args_str,
                                 },
                             }
+
                             event_data = json.dumps(delta_event)
                             yield f"event: content_block_delta\ndata: {event_data}\n\n"
 
@@ -582,6 +627,12 @@ class LangChainOpenAIResponseAdapter:
         if accumulated_message:
             finish_reason = _finish_reason_from_message(accumulated_message)
             usage = _usage_from_message(accumulated_message)
+
+            if accumulated_message.tool_calls:
+                log.debug(
+                    "tool calls sent",
+                    raw_tool_calls=accumulated_message.tool_calls,
+                )
 
             # Close any open blocks
             if current_block_type is not None:

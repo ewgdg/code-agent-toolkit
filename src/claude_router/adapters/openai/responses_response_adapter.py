@@ -222,6 +222,7 @@ class ResponsesResponseAdapter:
                     function_name = getattr(event, "name", "")
 
                     # Start new tool use block if not already started
+                    # todo: a new tool call id is not handled
                     if current_block_type != "tool_use":
                         tool_start = {
                             "type": "content_block_start",
