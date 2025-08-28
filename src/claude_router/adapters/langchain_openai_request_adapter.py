@@ -7,7 +7,7 @@ achieving significant code reduction while maintaining complete feature parity.
 
 import json
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any, cast
 
 import structlog
@@ -28,7 +28,6 @@ from ..router import ModelRouter
 from .custom_chatopenai import ChatOpenAIWithCustomFields
 
 logger = structlog.get_logger(__name__)
-
 
 class LangChainOpenAIRequestAdapter:
     """
@@ -329,7 +328,9 @@ class LangChainOpenAIRequestAdapter:
 
         # Add reasoning effort for supported models (OpenAI o1-style reasoning)
         if support_reasoning or self.config.openai.supports_reasoning(model):
-            reasoning_effort = self.config.openai.get_reasoning_effort(anthropic_request)
+            reasoning_effort = self.config.openai.get_reasoning_effort(
+                anthropic_request
+            )
             logger.info(
                 "Reasoning effort calculated",
                 effort=reasoning_effort,
@@ -409,10 +410,16 @@ class LangChainOpenAIRequestAdapter:
 
             if tools:
                 # langchain runnable should forward the bound model attributes
-                bind_tools_method = getattr(lc_model, "bind_tools", None)
-                if not bind_tools_method:
-                    raise Exception("Unexpected Langchain behavior.")
-                bind_tools_method(tools=tools)
+                bind_tools_method: Callable[..., Runnable[Any, BaseMessage]] | None = (
+                    getattr(lc_model, "bind_tools", None)
+                )
+                if callable(bind_tools_method):
+                    lc_model = bind_tools_method(tools=tools)
+                else:
+                    logger.warning(
+                        "Unexpected Langchain ChatModel behavior. method bind_tools not found."
+                    )
+                    lc_model = lc_model.bind(tools=tools)
 
             logger.info(
                 "Invoking LangChain ChatOpenAI",
