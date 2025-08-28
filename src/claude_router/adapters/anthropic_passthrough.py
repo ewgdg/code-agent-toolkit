@@ -1,3 +1,4 @@
+import json
 from collections.abc import AsyncIterator
 
 import httpx
@@ -39,6 +40,9 @@ class PassthroughAdapter:
         # Strip hop-by-hop headers that should not be forwarded between proxies
         forwarded_headers = self._strip_hop_by_hop_headers(forwarded_headers)
 
+        # Clean request body to handle thinking blocks without signatures
+        cleaned_body = self._clean_request_body(body)
+
         # Sanitize sensitive headers for logging only
         safe_headers = self._sanitize_headers_for_logging(forwarded_headers)
         logger.debug(
@@ -53,7 +57,7 @@ class PassthroughAdapter:
             method=method,
             url=url,
             headers=forwarded_headers,
-            content=body,
+            content=cleaned_body,
             params=query_params,
         )
 
@@ -84,6 +88,69 @@ class PassthroughAdapter:
                 sanitized[name] = value
 
         return sanitized
+
+    def _clean_request_body(self, body: bytes) -> bytes:
+        """
+        Clean request body by removing thinking blocks without valid signatures.
+
+        Anthropic API requires thinking blocks to have signature fields for verification.
+        Thinking blocks without signatures will cause 400 errors, so we strip them.
+        """
+        try:
+            if not body:
+                return body
+
+            request_data = json.loads(body.decode())
+
+            # Process messages if present
+            if "messages" in request_data and isinstance(
+                request_data["messages"], list
+            ):
+                cleaned_messages = []
+
+                for message in request_data["messages"]:
+                    content = message["content"]
+                    # Handle list content (filter thinking blocks)
+                    if isinstance(content, list):
+                        cleaned_content = []
+                        for block in content:
+                            if (
+                                isinstance(block, dict)
+                                and block.get("type") == "thinking"
+                            ):
+                                # Only keep thinking blocks with valid signatures
+                                if "signature" in block and block["signature"]:
+                                    cleaned_content.append(block)
+                                else:
+                                    logger.debug(
+                                        "Stripped thinking block without signature",
+                                        has_thinking=bool(block.get("thinking")),
+                                    )
+                            else:
+                                cleaned_content.append(block)
+
+                        message["content"] = cleaned_content
+
+                    cleaned_messages.append(message)
+
+                request_data["messages"] = cleaned_messages
+
+            return json.dumps(request_data).encode()
+
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            # If we can't parse the body, return it as-is
+            logger.debug(
+                "Could not parse request body for thinking block cleanup",
+                error=str(e),
+            )
+            return body
+        except Exception as e:
+            # For any other errors, log and return original body
+            logger.warning(
+                "Error during request body cleaning",
+                error=str(e),
+            )
+            return body
 
     def _strip_hop_by_hop_headers(self, headers: dict[str, str]) -> dict[str, str]:
         """Strip hop-by-hop headers that should not be forwarded between proxies.
