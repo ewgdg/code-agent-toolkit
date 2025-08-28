@@ -33,7 +33,27 @@ claudecode() {
 
 ## Configuration
 
-Edit `config/router.yaml` to customize routing rules:
+Edit `config/router.yaml` to customize routing rules and providers:
+
+### Provider Configuration
+
+```yaml
+providers:
+  openai:
+    base_url: "https://api.openai.com/v1"
+    adapter: "openai"  # Official OpenAI API with Responses API support
+    api_key_env: "OPENAI_API_KEY"
+  llama:
+    base_url: "http://127.0.0.1:8080/v1"
+    adapter: "openai-compatible"  # Third-party OpenAI-compatible API
+```
+
+**Adapter Types:**
+- `anthropic-passthrough`: Direct forwarding to Anthropic API
+- `openai`: Official OpenAI API with Responses API support
+- `openai-compatible`: Third-party APIs (llama.cpp, Ollama, LocalAI, etc.)
+
+### Override Rules
 
 ```yaml
 overrides:

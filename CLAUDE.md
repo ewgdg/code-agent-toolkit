@@ -94,11 +94,11 @@ Override rules support various `when` conditions:
 providers:
   openai:
     base_url: "https://api.openai.com/v1"
-    adapter: "openai"
+    adapter: "openai"  # Official OpenAI API with Responses API support
     api_key_env: "OPENAI_API_KEY"
   llama-local:
     base_url: "http://localhost:8080/v1"
-    adapter: "openai"
+    adapter: "openai-compatible"  # Third-party OpenAI-compatible API
     api_key_env: "LLAMA_API_KEY"  # optional
     timeouts_ms:
       connect: 3000
@@ -177,7 +177,7 @@ config:
 ### Key Features
 
 - **Hot reload**: Configuration changes are picked up automatically
-- **Multi-adapter support**: Two adapter types for different API compatibility levels
+- **Multi-adapter support**: Three adapter types for different API compatibility levels
 - **Streaming support**: Handles both streaming and non-streaming responses
 - **Request translation**: Full conversion between Anthropic and OpenAI API formats
 - **Reasoning effort mapping**: Maps token budgets to OpenAI reasoning effort levels
@@ -188,7 +188,8 @@ config:
 
 - **Adapter Types**: Available adapter types:
   - `anthropic-passthrough`: Direct forwarding to Anthropic API
-  - `openai`: Unified LangChain-based adapter for OpenAI compatibility
+  - `openai`: Official OpenAI API with Responses API support (use_responses_api=True)
+  - `openai-compatible`: Third-party OpenAI-compatible APIs like llama.cpp, Ollama, LocalAI (use_responses_api=False)
 - Plan mode detection is configured via override rules using `system_regex: r"\bplan mode is (activated|triggered|on)\b"` to detect when Claude Code enters plan mode
 - Provider resolution precedence: explicit rule provider > model prefix parsing > "anthropic" default
 - All requests include request IDs for tracing and debugging
@@ -213,8 +214,12 @@ The `ModelRouter.decide_route()` method is the main entry point that processes o
 
 The server dispatches requests to different handlers based on the adapter type:
 
-- `_handle_passthrough_request()` for Anthropic passthrough
-- `_handle_langchain_openai_request()` for LangChain-based OpenAI compatibility
+- `passthrough_adapter.handle_request()` for Anthropic passthrough
+- `unified_langchain_adapter.handle_request()` for both "openai" and "openai-compatible" adapters
+
+The `use_responses_api` parameter is automatically determined based on adapter type:
+- `True` for "openai" adapter (official OpenAI API with Responses API support)
+- `False` for "openai-compatible" adapter (third-party APIs using Chat Completions format)
 
 Model configuration overrides are processed by:
 
