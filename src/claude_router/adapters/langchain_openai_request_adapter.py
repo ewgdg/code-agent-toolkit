@@ -364,17 +364,12 @@ class LangChainOpenAIRequestAdapter:
         # Add cache key using service name (OpenAI already isolates by API key/account)
         service_name = "claude-router"
 
-        # Use appropriate parameter based on API type
-        if use_responses_api:
-            params["prompt_cache_key"] = service_name
-        else:
-            params["user"] = service_name
+        params["prompt_cache_key"] = service_name
 
         logger.debug(
             "Set prompt cache key for KV cache reuse",
-            service=service_name,
+            prompt_cache_key=params["prompt_cache_key"],
             provider=provider_config.base_url if provider_config else "unknown",
-            use_responses_api=use_responses_api,
         )
 
         return {
