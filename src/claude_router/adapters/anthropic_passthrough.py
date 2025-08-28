@@ -41,7 +41,7 @@ class PassthroughAdapter:
 
         # Sanitize sensitive headers for logging only
         safe_headers = self._sanitize_headers_for_logging(forwarded_headers)
-        logger.info(
+        logger.debug(
             "Forwarding request to Anthropic",
             method=method,
             url=url,

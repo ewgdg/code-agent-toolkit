@@ -132,7 +132,7 @@ class ProxyRouter:
         request_id = headers.get("x-request-id", f"req_{id(request)}")
         headers["x-request-id"] = request_id
 
-        logger.info(
+        logger.debug(
             "Incoming request",
             method=method,
             path=path,
@@ -153,7 +153,7 @@ class ProxyRouter:
             # Make routing decision
             decision = self.router.decide_route(headers, request_data)
 
-            logger.info(
+            logger.debug(
                 "Routing decision",
                 request_id=request_id,
                 model=decision.model,

@@ -83,7 +83,7 @@ class ModelRouter:
         logger.debug(f"Checking {len(self.config.overrides)} override rules")
 
         for i, override in enumerate(self.config.overrides):
-            logger.info(
+            logger.debug(
                 f"Evaluating override rule {i + 1}",
                 condition=override.when,
                 target_model=override.model,
@@ -110,7 +110,7 @@ class ModelRouter:
 
                 # Log when override rule has model config
                 if model_config:
-                    logger.info(
+                    logger.debug(
                         "Override rule has model config",
                         rule_index=i + 1,
                         config_keys=list(model_config.keys()),
@@ -158,7 +158,7 @@ class ModelRouter:
 
             for header_name, expected_value in header_conditions.items():
                 actual_value = headers.get(header_name, "")
-                logger.info(
+                logger.debug(
                     "Header check",
                     name=header_name,
                     expected=expected_value,
@@ -167,11 +167,11 @@ class ModelRouter:
 
                 if isinstance(expected_value, str):
                     if actual_value.lower() != expected_value.lower():
-                        logger.info("Header condition failed")
+                        logger.debug("Header condition failed")
                         return False
                 elif isinstance(expected_value, list):
                     if actual_value.lower() not in [v.lower() for v in expected_value]:
-                        logger.info("Header condition failed (list)")
+                        logger.debug("Header condition failed (list)")
                         return False
 
         # Check request data conditions
@@ -291,14 +291,14 @@ class ModelRouter:
 
         for tool in tools:
             if isinstance(tool, dict) and tool.get("name") == tool_name:
-                logger.info(
+                logger.debug(
                     "Tool found in tools list",
                     tool_name=tool_name,
                     tools_count=len(tools),
                 )
                 return True
 
-        logger.info(
+        logger.debug(
             "Tool NOT found in tools list", tool_name=tool_name, tools_count=len(tools)
         )
         return False
@@ -496,7 +496,7 @@ class ModelRouter:
 
         # Log only what changed (only at top level to avoid duplicates)
         if changed_values and not _is_nested:
-            logger.info("Model config overridden", changed=changed_values)
+            logger.debug("Model config overridden", changed=changed_values)
 
         return result
 
