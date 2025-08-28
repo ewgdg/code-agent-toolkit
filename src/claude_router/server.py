@@ -1,6 +1,7 @@
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, AsyncGenerator
 
 import structlog
 import uvicorn
@@ -199,7 +200,7 @@ class ProxyRouter:
         )
 
     @asynccontextmanager
-    async def _lifespan(self, app: FastAPI):
+    async def _lifespan(self, app: FastAPI) -> AsyncGenerator[None, None]:
         """FastAPI lifespan context that runs startup tasks."""
         await self.startup()
         yield

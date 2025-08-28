@@ -31,7 +31,7 @@ uv run pytest
 uv run pytest tests/test_router.py -v
 
 # Type checking
-uv run mypy src/
+uv run pyright src/
 
 # Linting and formatting, try formatting first
 uv run ruff format src/ tests/
@@ -112,6 +112,68 @@ providers:
 - `model_regex: r"^claude-3\.5-(sonnet|haiku)"` - matches Claude 3.5 models
 - `model_regex: "opus"` - matches any model containing "opus"
 
+#### Model Configuration Overrides
+
+Override rules can include a `config` section to modify model parameters with conditional logic. This uses the `ModelConfigEntry` system with `when` conditions to determine when overrides should be applied.
+
+**When Condition Types:**
+
+- `current_in: [val1, val2, null]` - Apply if current value is in the specified list (supports `null` for None/unset values)
+- `current_not_in: [val1, val2]` - Apply if current value is NOT in the specified list  
+- `current_equals: value` - Apply if current value equals the specified value
+- `current_not_equals: value` - Apply if current value does NOT equal the specified value
+
+If no `when` conditions are specified, the override is always applied.
+
+**Configuration Override Examples:**
+
+```yaml
+overrides:
+  # Route plan mode with conditional reasoning effort
+  - when:
+      request:
+        user_regex: '<system-reminder>.*plan mode.*</system-reminder>'
+    provider: "openai"
+    model: "gpt-5"
+    config:
+      reasoning:
+        effort: 
+          value: "medium"
+          when:
+            current_in: [null, "low", "minimum"]  # Only upgrade if unset, low, or minimum
+        summary: "auto"  # Always apply (no conditions)
+      temperature: 0.7  # Always apply (no conditions)
+
+  # High-performance model with conditional overrides  
+  - when:
+      request:
+        model_regex: '^gpt-high$'
+    model: "gpt-5"
+    provider: "openai"
+    config:
+      reasoning:
+        effort: 
+          value: "high"
+          when:
+            current_not_in: ["high", "maximum"]  # Apply unless already high/maximum
+      max_tokens:
+        value: 4000
+        when:
+          current_equals: null  # Only set if unset
+```
+
+**YAML Dict Format (Alternative):**
+
+```yaml
+config:
+  temperature:
+    value: 0.8
+    when:
+      current_not_equals: 0.8  # Apply unless already 0.8
+  reasoning:
+    effort: "medium"  # No conditions = always apply
+```
+
 ### Key Features
 
 - **Hot reload**: Configuration changes are picked up automatically
@@ -153,6 +215,12 @@ The server dispatches requests to different handlers based on the adapter type:
 
 - `_handle_passthrough_request()` for Anthropic passthrough
 - `_handle_langchain_openai_request()` for LangChain-based OpenAI compatibility
+
+Model configuration overrides are processed by:
+
+- `_apply_granular_config_overrides()` applies configuration overrides with when condition evaluation
+- `_should_apply_config_override()` evaluates when conditions (current_in, current_not_in, current_equals, current_not_equals)
+- `WhenCondition` schema class defines the available condition types for ModelConfigEntry objects
 
 ## Typing Rules
 - Always do typing.

@@ -9,8 +9,13 @@ router:
 providers:
   openai:
     base_url: "https://api.openai.com/v1"
-    adapter: "openai-responses"
+    adapter: "openai"
     api_key_env: "OPENAI_API_KEY"
+    use_responses_api: True
+  llama:
+    base_url: "http://127.0.0.1:8080/v1"
+    adapter: "openai"
+    use_responses_api: False
 
 # OpenAI configuration
 openai:
@@ -45,9 +50,21 @@ overrides:
       reasoning:
         effort: 
           value: "medium"
-          priority: "default"
+          when:
+            current_in: [null, "low", "minimal"]  # Apply only if unset, low, or minimal
         summary: "auto"
-    
+  
+  # Passthrough sonnet model request
+  - when:
+      request:
+        model_regex: 'sonnet'
+    provider: "anthropic"
+      
+  - when:
+      request:
+        model_regex: 'haiku'
+    provider: "anthropic"
+
   # Route opus model requests to powerful OpenAI model
   - when:
       request:
@@ -55,17 +72,10 @@ overrides:
     provider: "openai"
     model: "gpt-5"
     
-  # Route llama requests to local llama instance
+  # Route any model containing "gpt-mini" to background model
   - when:
       request:
-        model_regex: 'gpt-oss(?:-.*)?'
-    provider: "llama"
-    model: "gpt-oss"
-    
-  # Route any model containing "mini" to background model
-  - when:
-      request:
-        model_regex: 'mini'
+        model_regex: '^gpt-mini$'
     provider: "openai"
     model: "gpt-5-mini"
   
@@ -79,7 +89,6 @@ overrides:
       reasoning:
         effort: 
           value: "high"
-          priority: "always"  # Always use high effort for this model
         summary: "auto"
   
   # Route gpt requests to OpenAI
@@ -88,3 +97,18 @@ overrides:
         model_regex: '^gpt$'
     provider: "openai"
     model: "gpt-5"
+
+  - when:
+      request:
+        model_regex: '^gpt[-0-9]+.*'
+    provider: "openai"
+
+  - when:
+      request:
+        model_regex: '^o[0-9]+(?:-.*)?'
+    provider: "openai"
+  
+  - when:
+      request:
+        model_regex: '.*'
+    provider: "llama"

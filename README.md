@@ -50,7 +50,8 @@ overrides:
 # Tests
 uv run pytest
 # Type check
-uv run mypy src/
+uv run pyright src/
 # Lint
+uv run ruff format src/
 uv run ruff check src/
 ```

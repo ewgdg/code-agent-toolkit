@@ -4,7 +4,7 @@ from typing import Any
 import structlog
 
 from .config import Config
-from .config.schema import ModelConfigEntry
+from .config.schema import ModelConfigEntry, WhenCondition
 
 logger = structlog.get_logger(__name__)
 
@@ -107,6 +107,14 @@ class ModelRouter:
 
                 # Look up adapter from provider config
                 adapter = self._resolve_adapter(resolved_provider)
+
+                # Log when override rule has model config
+                if model_config:
+                    logger.info(
+                        "Override rule has model config",
+                        rule_index=i + 1,
+                        config_keys=list(model_config.keys()),
+                    )
 
                 logger.debug(
                     f"Override rule {i + 1} MATCHED",
@@ -446,7 +454,10 @@ class ModelRouter:
             return "openai"
 
     def _apply_granular_config_overrides(
-        self, target: dict[str, Any], source: dict[str, Any | ModelConfigEntry]
+        self,
+        target: dict[str, Any],
+        source: dict[str, Any | ModelConfigEntry],
+        _is_nested: bool = False,
     ) -> dict[str, Any]:
         """
         Apply configuration overrides with granular priority control.
@@ -454,41 +465,104 @@ class ModelRouter:
         Args:
             target: Target configuration dict
             source: Source configuration dict (may contain ModelConfigEntry objects)
+            _is_nested: Internal flag to prevent duplicate logging for nested calls
 
         Returns:
             Updated configuration dict
         """
         result = target.copy()
+        changed_values = {}  # Track what was actually changed
 
         for key, value in source.items():
             if isinstance(value, ModelConfigEntry):
-                # Handle ModelConfigEntry with explicit priority
-                if key not in result or value.priority == "always":
+                # Handle ModelConfigEntry with new condition system
+                current_value = result.get(key)
+                if self._should_apply_config_override(current_value, value):
                     result[key] = value.value
-                # If priority is "default" and key exists, keep existing value
-            elif isinstance(value, dict) and "value" in value and "priority" in value:
+                    changed_values[key] = value.value
+            elif isinstance(value, dict) and "value" in value:
                 # Handle dict representation of ModelConfigEntry (from YAML)
-                if key not in result or value["priority"] == "always":
-                    result[key] = value["value"]
-                # If priority is "default" and key exists, keep existing value
+                current_value = result.get(key)
+
+                # Convert dict to ModelConfigEntry for condition evaluation
+                entry_dict = value.copy()
+                when_dict = entry_dict.get("when")
+                when_condition = WhenCondition(**when_dict) if when_dict else None
+
+                temp_entry = ModelConfigEntry(
+                    value=entry_dict["value"], when=when_condition
+                )
+
+                if self._should_apply_config_override(current_value, temp_entry):
+                    result[key] = entry_dict["value"]
+                    changed_values[key] = entry_dict["value"]
             elif (
                 isinstance(value, dict)
                 and key in result
                 and isinstance(result[key], dict)
             ):
                 # Recursively handle nested dictionaries
-                result[key] = self._apply_granular_config_overrides(result[key], value)
+                nested_result = self._apply_granular_config_overrides(
+                    result[key], value, _is_nested=True
+                )
+                if nested_result != result[key]:
+                    result[key] = nested_result
+                    changed_values[key] = nested_result
             elif isinstance(value, dict):
                 # New nested dictionary with default priority
                 if key not in result:
-                    result[key] = self._apply_granular_config_overrides({}, value)
+                    result[key] = self._apply_granular_config_overrides(
+                        {}, value, _is_nested=True
+                    )
+                    changed_values[key] = result[key]
             else:
                 # Direct value with default priority
                 if key not in result:
                     result[key] = value
+                    changed_values[key] = value
                 # If key exists, keep existing value (default priority)
 
+        # Log only what changed (only at top level to avoid duplicates)
+        if changed_values and not _is_nested:
+            logger.info("Model config overridden", changed=changed_values)
+
         return result
+
+    def _should_apply_config_override(
+        self, current_value: Any, entry: ModelConfigEntry
+    ) -> bool:
+        """
+        Determine if a configuration override should be applied based on conditions.
+
+        Args:
+            current_value: The current configuration value (or None if unset)
+            entry: ModelConfigEntry with conditions to evaluate
+
+        Returns:
+            True if the override should be applied, False otherwise
+        """
+        # Handle when condition system
+        if entry.when is not None:
+            when_condition = entry.when
+
+            # Check current_in condition
+            if when_condition.current_in is not None:
+                return current_value in when_condition.current_in
+
+            # Check current_not_in condition
+            if when_condition.current_not_in is not None:
+                return current_value not in when_condition.current_not_in
+
+            # Check current_equals condition
+            if when_condition.current_equals is not None:
+                return bool(current_value == when_condition.current_equals)
+
+            # Check current_not_equals condition
+            if when_condition.current_not_equals is not None:
+                return bool(current_value != when_condition.current_not_equals)
+
+        # Default behavior: if no conditions are defined, assume always true
+        return True
 
     def _deep_merge_configs(
         self,

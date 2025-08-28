@@ -1,6 +1,6 @@
 import re
 from re import Pattern
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -123,13 +123,31 @@ class ProviderConfig(BaseModel):
         return v
 
 
+class WhenCondition(BaseModel):
+    """Conditions for when to apply a configuration override."""
+
+    current_in: list[Any] | None = Field(
+        default=None,
+        description="Apply if current value is in this list (supports null for None)",
+    )
+    current_not_in: list[Any] | None = Field(
+        default=None, description="Apply if current value is NOT in this list"
+    )
+    current_equals: Any | None = Field(
+        default=None, description="Apply if current value equals this value"
+    )
+    current_not_equals: Any | None = Field(
+        default=None, description="Apply if current value does NOT equal this value"
+    )
+
+
 class ModelConfigEntry(BaseModel):
-    """A single model configuration parameter with priority control."""
+    """A single model configuration parameter with condition-based control."""
 
     value: Any = Field(description="The configuration value")
-    priority: Literal["default", "always"] = Field(
-        default="default",
-        description="Priority: 'default' only if not set, 'always' overrides",
+    when: WhenCondition | None = Field(
+        default=None,
+        description="Conditions for when to apply this override (defaults to always apply if None)",
     )
 
 

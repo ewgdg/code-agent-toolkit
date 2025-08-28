@@ -53,11 +53,11 @@ ignore = ["E501"]
 [tool.ruff.format]
 quote-style = "double"
 
-[tool.mypy]
-python_version = "3.13"
-strict = true
-warn_return_any = true
-warn_unused_configs = true
+[tool.pyright]
+pythonVersion = "3.13"
+typeCheckingMode = "basic"
+reportMissingImports = true
+reportMissingTypeStubs = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -66,6 +66,7 @@ testpaths = ["tests"]
 [dependency-groups]
 dev = [
     "mypy>=1.17.1",
+    "pyright>=1.1.404",
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=6.2.1",

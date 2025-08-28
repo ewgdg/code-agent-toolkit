@@ -3,6 +3,7 @@ from src.claude_router.config.schema import (
     ModelConfigEntry,
     OverrideRule,
     ProviderConfig,
+    WhenCondition,
 )
 from src.claude_router.router import ModelRouter
 
@@ -664,16 +665,16 @@ class TestModelRouter:
         assert decision.provider == "anthropic"
         assert decision.adapter == "anthropic-passthrough"
 
-    def test_model_config_default_priority(self):
-        """Test model config with default priority."""
+    def test_model_config_no_conditions(self):
+        """Test model config with no conditions (always apply)."""
         self.config.overrides = [
             OverrideRule(
                 when={"request": {"model_regex": "test"}},
                 model="openai/gpt-5",
                 config={
-                    "reasoning": {"effort": "low"},  # default priority
-                    "temperature": 0.3,  # default priority
-                    "max_tokens": 1000,  # default priority
+                    "reasoning": {"effort": "low"},  # no conditions = always apply
+                    "temperature": 0.3,  # no conditions = always apply
+                    "max_tokens": 1000,  # no conditions = always apply
                 },
             )
         ]
@@ -687,19 +688,24 @@ class TestModelRouter:
         assert decision.model == "gpt-5"
         assert "override rule 1 matched" in decision.reason.lower()
 
-    def test_model_config_always_priority(self):
-        """Test model config with always priority using ModelConfigEntry."""
+    def test_model_config_with_conditions(self):
+        """Test model config with when conditions using ModelConfigEntry."""
         self.config.overrides = [
             OverrideRule(
                 when={"request": {"model_regex": "test"}},
                 model="openai/gpt-5",
                 config={
                     "reasoning": {
-                        "effort": ModelConfigEntry(value="low", priority="always"),
-                        "summary": "auto",  # default priority
+                        "effort": ModelConfigEntry(
+                            value="low",
+                            when=WhenCondition(current_in=[None, "minimum"]),
+                        ),
+                        "summary": "auto",  # no conditions = always apply
                     },
-                    "temperature": ModelConfigEntry(value=0.3, priority="always"),
-                    "max_tokens": 1000,  # default priority
+                    "temperature": ModelConfigEntry(
+                        value=0.3, when=WhenCondition(current_not_equals=0.3)
+                    ),
+                    "max_tokens": 1000,  # no conditions = always apply
                 },
             )
         ]
@@ -721,14 +727,14 @@ class TestModelRouter:
         }
 
         override_config = {
-            "temperature": ModelConfigEntry(value=0.1, priority="always"),
-            "max_tokens": 2000,  # default priority
+            "temperature": ModelConfigEntry(value=0.1),  # no conditions = always apply
+            "max_tokens": 2000,  # no conditions = always apply
             "reasoning": {
-                "effort": "high",  # default priority - should NOT override
-                "summary": "auto",  # default priority - should be added
-                "tokens": ModelConfigEntry(
-                    value=2000, priority="always"
-                ),  # should override
+                "effort": ModelConfigEntry(
+                    value="high", when=WhenCondition(current_not_equals="medium")
+                ),  # should NOT override since current is "medium"
+                "summary": "auto",  # no conditions = always apply (new key)
+                "tokens": ModelConfigEntry(value=2000),  # no conditions = always apply
             },
         }
 
@@ -737,13 +743,262 @@ class TestModelRouter:
         )
 
         expected = {
-            "temperature": 0.1,  # overridden (always priority)
+            "temperature": 0.1,  # overridden (no conditions = always apply)
             "max_tokens": 2000,  # added (no existing value)
             "reasoning": {
-                "effort": "medium",  # preserved (default priority, existing value)
-                "tokens": 2000,  # overridden (always priority)
+                "effort": "medium",  # preserved (condition failed: current equals "medium")
+                "tokens": 2000,  # overridden (no conditions = always apply)
                 "summary": "auto",  # added (no existing value)
             },
+        }
+
+        assert result == expected
+
+    def test_when_condition_current_in(self):
+        """Test when condition with current_in."""
+        existing_config = {
+            "reasoning": {"effort": "low"},
+            "temperature": 0.5,
+        }
+
+        override_config = {
+            "reasoning": {
+                "effort": ModelConfigEntry(
+                    value="medium",
+                    when=WhenCondition(current_in=["low", "minimum", None]),
+                )
+            },
+            "temperature": ModelConfigEntry(
+                value=0.8,
+                when=WhenCondition(current_in=[None, 0.1, 0.2]),  # Should not match 0.5
+            ),
+        }
+
+        result = self.router._apply_granular_config_overrides(
+            existing_config, override_config
+        )
+
+        expected = {
+            "reasoning": {"effort": "medium"},  # Applied: "low" was in the list
+            "temperature": 0.5,  # Not applied: 0.5 was not in the list
+        }
+
+        assert result == expected
+
+    def test_when_condition_current_in_with_none(self):
+        """Test when condition with current_in including None for missing values."""
+        existing_config = {
+            "temperature": 0.7,
+            # Note: "reasoning" is missing
+        }
+
+        override_config = {
+            "reasoning": {
+                "effort": ModelConfigEntry(
+                    value="medium",
+                    when=WhenCondition(current_in=[None, "low", "minimum"]),
+                )
+            },
+            "temperature": ModelConfigEntry(
+                value=0.2,
+                when=WhenCondition(current_in=[None, 0.1]),  # Should not match 0.7
+            ),
+        }
+
+        result = self.router._apply_granular_config_overrides(
+            existing_config, override_config
+        )
+
+        expected = {
+            "temperature": 0.7,  # Not applied: 0.7 not in list
+            "reasoning": {
+                "effort": "medium"
+            },  # Applied: None (missing) was in the list
+        }
+
+        assert result == expected
+
+    def test_when_condition_current_not_in(self):
+        """Test when condition with current_not_in."""
+        existing_config = {
+            "reasoning": {"effort": "low"},
+            "temperature": 0.9,
+        }
+
+        override_config = {
+            "reasoning": {
+                "effort": ModelConfigEntry(
+                    value="high", when=WhenCondition(current_not_in=["high", "maximum"])
+                )
+            },
+            "temperature": ModelConfigEntry(
+                value=0.2,
+                when=WhenCondition(current_not_in=[0.9, 1.0]),  # Should not apply
+            ),
+        }
+
+        result = self.router._apply_granular_config_overrides(
+            existing_config, override_config
+        )
+
+        expected = {
+            "reasoning": {
+                "effort": "high"
+            },  # Applied: "low" not in ["high", "maximum"]
+            "temperature": 0.9,  # Not applied: 0.9 is in the exclusion list
+        }
+
+        assert result == expected
+
+    def test_when_condition_current_equals(self):
+        """Test when condition with current_equals."""
+        existing_config = {
+            "reasoning": {"effort": "low"},
+            "temperature": 0.5,
+        }
+
+        override_config = {
+            "reasoning": {
+                "effort": ModelConfigEntry(
+                    value="medium", when=WhenCondition(current_equals="low")
+                )
+            },
+            "temperature": ModelConfigEntry(
+                value=0.8,
+                when=WhenCondition(current_equals=0.7),  # Should not match 0.5
+            ),
+        }
+
+        result = self.router._apply_granular_config_overrides(
+            existing_config, override_config
+        )
+
+        expected = {
+            "reasoning": {"effort": "medium"},  # Applied: current equals "low"
+            "temperature": 0.5,  # Not applied: current doesn't equal 0.7
+        }
+
+        assert result == expected
+
+    def test_when_condition_current_not_equals(self):
+        """Test when condition with current_not_equals."""
+        existing_config = {
+            "reasoning": {"effort": "low"},
+            "temperature": 0.5,
+        }
+
+        override_config = {
+            "reasoning": {
+                "effort": ModelConfigEntry(
+                    value="high", when=WhenCondition(current_not_equals="high")
+                )
+            },
+            "temperature": ModelConfigEntry(
+                value=0.8,
+                when=WhenCondition(current_not_equals=0.5),  # Should not apply
+            ),
+        }
+
+        result = self.router._apply_granular_config_overrides(
+            existing_config, override_config
+        )
+
+        expected = {
+            "reasoning": {"effort": "high"},  # Applied: "low" != "high"
+            "temperature": 0.5,  # Not applied: current equals 0.5
+        }
+
+        assert result == expected
+
+    def test_when_condition_no_conditions_defaults_to_always_true(self):
+        """Test that when no conditions are defined, it defaults to always apply."""
+        existing_config = {
+            "temperature": 0.7,
+        }
+
+        override_config = {
+            "temperature": ModelConfigEntry(
+                value=0.2,
+                when=WhenCondition(),  # No conditions defined
+            )
+        }
+
+        result = self.router._apply_granular_config_overrides(
+            existing_config, override_config
+        )
+
+        expected = {
+            "temperature": 0.2,  # Applied: no conditions means always true
+        }
+
+        assert result == expected
+
+    def test_when_condition_yaml_dict_format(self):
+        """Test when condition from YAML dict format."""
+        existing_config = {
+            "reasoning": {"effort": "low"},
+        }
+
+        # Simulate YAML dict format
+        override_config = {
+            "reasoning": {
+                "effort": {
+                    "value": "medium",
+                    "when": {"current_in": ["low", "minimum", None]},
+                }
+            }
+        }
+
+        result = self.router._apply_granular_config_overrides(
+            existing_config, override_config
+        )
+
+        expected = {
+            "reasoning": {"effort": "medium"},  # Applied: "low" was in the list
+        }
+
+        assert result == expected
+
+    def test_mixed_conditions_system(self):
+        """Test mixed when conditions in different config entries."""
+        existing_config = {
+            "temperature": 0.7,
+            "max_tokens": 1000,
+        }
+
+        override_config = {
+            "temperature": ModelConfigEntry(
+                value=0.2,
+                when=WhenCondition(
+                    current_not_in=[0.2, 0.3]
+                ),  # Should apply since current is 0.7
+            ),
+            "max_tokens": ModelConfigEntry(
+                value=2000,
+                when=WhenCondition(
+                    current_not_equals=1000
+                ),  # Should not apply since current is 1000
+            ),
+            "reasoning": {
+                "effort": ModelConfigEntry(
+                    value="high",
+                    when=WhenCondition(
+                        current_in=[None, "low"]
+                    ),  # Should apply since None (missing)
+                )
+            },
+        }
+
+        result = self.router._apply_granular_config_overrides(
+            existing_config, override_config
+        )
+
+        expected = {
+            "temperature": 0.2,  # Applied: 0.7 not in [0.2, 0.3]
+            "max_tokens": 1000,  # Not applied: current equals 1000 (condition fails)
+            "reasoning": {
+                "effort": "high"
+            },  # Applied: None (missing) in current_in list
         }
 
         assert result == expected

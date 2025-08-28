@@ -19,7 +19,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
-from langchain_core.runnables import ConfigurableField, RunnableSerializable
+from langchain_core.runnables import ConfigurableField, Runnable, RunnableSerializable
 from pydantic import SecretStr
 
 from ..config import Config, ProviderConfig
@@ -39,7 +39,7 @@ class LangChainOpenAIRequestAdapter:
     def __init__(self, config: Config, router: ModelRouter):
         self.config = config
         self.router = router
-        self._model_cache: dict[str, RunnableSerializable] = {}
+        self._model_cache: dict[str, RunnableSerializable[Any, BaseMessage]] = {}
 
     async def adapt_request(
         self,
@@ -91,7 +91,7 @@ class LangChainOpenAIRequestAdapter:
                 api_type="responses" if use_responses_api else "chat_completions",
                 message_count=len(messages),
                 has_tools=bool(anthropic_request.get("tools")),
-                has_reasoning=support_reasoning
+                support_reasoning=support_reasoning
                 or self.config.openai.supports_reasoning(model),
                 stream=anthropic_request.get("stream", False),
             )
@@ -111,7 +111,7 @@ class LangChainOpenAIRequestAdapter:
         self,
         provider_config: ProviderConfig,
         model: str,
-    ) -> RunnableSerializable:
+    ) -> RunnableSerializable[Any, BaseMessage]:
         """Create or retrieve cached LangChain model instance."""
         cache_key = f"{provider_config.base_url}:{model}"
 
@@ -321,7 +321,9 @@ class LangChainOpenAIRequestAdapter:
         if "top_p" in anthropic_request:
             params["top_p"] = anthropic_request["top_p"]
         if "max_tokens" in anthropic_request:
-            params["max_tokens"] = anthropic_request["max_tokens"]
+            max_tokens = anthropic_request["max_tokens"]
+            # OpenAI requires minimum 16 tokens
+            params["max_tokens"] = max(max_tokens, 16) if max_tokens is not None else 16
         if "stop_sequences" in anthropic_request:
             params["stop"] = anthropic_request["stop_sequences"]
 
@@ -412,14 +414,14 @@ class LangChainOpenAIRequestAdapter:
                     raise Exception("Unexpected Langchain behavior.")
                 bind_tools_method(tools=tools)
 
-            reasoning_config = params.get("reasoning") or params.get("reasoning_effort")
             logger.info(
                 "Invoking LangChain ChatOpenAI",
                 base_url=provider_config.base_url,
                 model=target_model,
                 stream=stream,
                 has_tools=bool(tools),
-                has_reasoning=bool(reasoning_config),
+                reasoning_config=params.get("reasoning")
+                or params.get("reasoning_effort"),
             )
 
             if stream:

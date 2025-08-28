@@ -61,7 +61,11 @@ class ChatCompletionsRequestAdapter:
             openai_request["top_p"] = anthropic_request["top_p"]
 
         if "max_tokens" in anthropic_request:
-            openai_request["max_tokens"] = anthropic_request["max_tokens"]
+            max_tokens = anthropic_request["max_tokens"]
+            # OpenAI requires minimum 16 tokens
+            openai_request["max_tokens"] = (
+                max(max_tokens, 16) if max_tokens is not None else 16
+            )
 
         # Add stop sequences if present
         if "stop_sequences" in anthropic_request:

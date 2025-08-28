@@ -9,6 +9,7 @@ from src.claude_router.config import Config, ConfigLoader
 from src.claude_router.config.schema import (
     ModelConfigEntry,
     OverrideRule,
+    WhenCondition,
 )
 
 
@@ -96,15 +97,11 @@ class TestConfig:
         # Test ModelConfigEntry validation
         entry = ModelConfigEntry(value="low")
         assert entry.value == "low"
-        assert entry.priority == "default"  # default value
+        assert entry.when is None  # default value
 
-        entry = ModelConfigEntry(value=0.3, priority="always")
+        entry = ModelConfigEntry(value=0.3, when=WhenCondition(current_in=[None, 0.1]))
         assert entry.value == 0.3
-        assert entry.priority == "always"
-
-        # Invalid priority should raise ValidationError
-        with pytest.raises(ValidationError):
-            ModelConfigEntry(value="test", priority="invalid")
+        assert entry.when.current_in == [None, 0.1]
 
     def test_override_rule_with_model_config(self):
         """Test OverrideRule with model_config field."""
@@ -113,7 +110,9 @@ class TestConfig:
             model="openai/gpt-5",
             config={
                 "reasoning": {
-                    "effort": ModelConfigEntry(value="low", priority="always")
+                    "effort": ModelConfigEntry(
+                        value="low", when=WhenCondition(current_not_in=["low", "high"])
+                    )
                 }
             },
         )
@@ -121,7 +120,10 @@ class TestConfig:
         assert override_rule.when == {"request": {"model_regex": "test"}}
         assert override_rule.model == "openai/gpt-5"
         assert override_rule.config["reasoning"]["effort"].value == "low"
-        assert override_rule.config["reasoning"]["effort"].priority == "always"
+        assert override_rule.config["reasoning"]["effort"].when.current_not_in == [
+            "low",
+            "high",
+        ]
 
     def test_config_with_model_config_overrides(self):
         """Test full Config with model_config overrides in YAML."""
@@ -131,15 +133,18 @@ class TestConfig:
                     "when": {"request": {"model_regex": "gpt-5"}},
                     "model": "openai/gpt-5",
                     "config": {
-                        "reasoning": {"effort": "low"},  # default priority
+                        "reasoning": {"effort": "low"},  # no conditions = always apply
                     },
                 },
                 {
                     "when": {"request": {"model_regex": "haiku"}},
                     "model": "openai/gpt-4o-mini",
                     "config": {
-                        "temperature": {"value": 0.3, "priority": "always"},
-                        "max_tokens": 1000,  # default priority
+                        "temperature": {
+                            "value": 0.3,
+                            "when": {"current_not_equals": 0.3},
+                        },
+                        "max_tokens": 1000,  # no conditions = always apply
                     },
                 },
             ]
@@ -167,7 +172,7 @@ class TestConfig:
             # This is expected behavior - the granular logic will handle both formats
             assert second_rule.config["temperature"] == {
                 "value": 0.3,
-                "priority": "always",
+                "when": {"current_not_equals": 0.3},
             }
             assert second_rule.config["max_tokens"] == 1000
 

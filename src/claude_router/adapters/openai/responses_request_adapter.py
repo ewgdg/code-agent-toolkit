@@ -75,7 +75,11 @@ class ResponsesRequestAdapter:
             openai_request["top_p"] = anthropic_request["top_p"]
 
         if "max_tokens" in anthropic_request:
-            openai_request["max_output_tokens"] = anthropic_request["max_tokens"]
+            max_tokens = anthropic_request["max_tokens"]
+            # OpenAI requires minimum 16 tokens
+            openai_request["max_output_tokens"] = (
+                max(max_tokens, 16) if max_tokens is not None else 16
+            )
 
         # Add reasoning effort for supported models
         if self.config.openai.supports_reasoning(target_model):
