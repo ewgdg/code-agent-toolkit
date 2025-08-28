@@ -329,7 +329,7 @@ class LangChainOpenAIRequestAdapter:
 
         # Add reasoning effort for supported models (OpenAI o1-style reasoning)
         if support_reasoning or self.config.openai.supports_reasoning(model):
-            reasoning_effort = self.router.get_reasoning_effort(anthropic_request)
+            reasoning_effort = self.config.openai.get_reasoning_effort(anthropic_request)
             logger.info(
                 "Reasoning effort calculated",
                 effort=reasoning_effort,

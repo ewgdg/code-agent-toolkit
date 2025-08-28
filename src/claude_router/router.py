@@ -332,34 +332,6 @@ class ModelRouter:
             # Fallback: assume OpenAI if no provider specified
             return "openai", provider_model_string
 
-    def get_reasoning_effort(self, request_data: dict[str, Any]) -> str:
-        """
-        Extract reasoning effort from request thinking.budget_tokens.
-
-        Maps token ranges to effort levels:
-        - 0 or None: minimal (no reasoning)
-        - 1-5K: low (simple tasks)
-        - 5K-15K: medium (balanced tasks)
-        - 15K+: high (complex reasoning)
-        """
-
-        thinking = request_data.get("thinking", {})
-        budget_tokens = thinking.get("budget_tokens")
-
-        # Handle missing or zero budget tokens
-        if budget_tokens is None or budget_tokens == 0:
-            return "minimal"
-
-        # Map token ranges to effort levels using configurable thresholds
-        thresholds = self.config.openai.reasoning_thresholds
-
-        if budget_tokens <= thresholds.low_max:
-            return "low"
-        elif budget_tokens <= thresholds.medium_max:
-            return "medium"
-        else:
-            return "high"
-
     def _extract_system_content(self, request_data: dict[str, Any]) -> list[str]:
         """
         Extract system prompt content from request data as a list of text parts.

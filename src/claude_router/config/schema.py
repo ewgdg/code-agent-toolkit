@@ -72,6 +72,37 @@ class OpenAIConfig(BaseModel):
             and "-chat" not in model_lower
         )
 
+    def get_reasoning_effort(self, request_data: dict[str, Any]) -> str:
+        """
+        Extract reasoning effort from request thinking.budget_tokens.
+
+        Maps token ranges to effort levels:
+        - 0 or None: uses reasoning_effort_default (configurable)
+        - 1-5K: low (simple tasks)
+        - 5K-15K: medium (balanced tasks)
+        - 15K+: high (complex reasoning)
+        
+        Args:
+            request_data: The Anthropic request data
+            
+        Returns:
+            Reasoning effort level string
+        """
+        thinking = request_data.get("thinking", {})
+        budget_tokens = thinking.get("budget_tokens")
+
+        # Handle missing or zero budget tokens - use configured default
+        if budget_tokens is None or budget_tokens == 0:
+            return self.reasoning_effort_default
+
+        # Map token ranges to effort levels using configurable thresholds
+        if budget_tokens <= self.reasoning_thresholds.low_max:
+            return "low"
+        elif budget_tokens <= self.reasoning_thresholds.medium_max:
+            return "medium"
+        else:
+            return "high"
+
 
 class TimeoutsConfig(BaseModel):
     connect: int = Field(default=5000, description="Connect timeout in milliseconds")
