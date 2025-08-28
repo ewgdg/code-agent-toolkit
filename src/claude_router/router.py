@@ -12,7 +12,6 @@ logger = structlog.get_logger(__name__)
 class RouterDecision:
     def __init__(
         self,
-        target: str,
         model: str,
         reason: str = "",
         provider: str | None = None,
@@ -20,10 +19,9 @@ class RouterDecision:
         model_config: dict[str, Any | ModelConfigEntry] | None = None,
         support_reasoning: bool = False,
     ):
-        self.target = target  # "openai" or "anthropic" (kept for backward compat)
         self.model = model  # Model to use
         self.reason = reason
-        self.provider = provider or target  # Provider name, defaults to target
+        self.provider = provider or "anthropic"  # Provider name, defaults to anthropic
         self.adapter = adapter  # Adapter type
         self.model_config = model_config  # Applied model config from overrides
         self.support_reasoning = support_reasoning  # Whether reasoning is supported
@@ -60,7 +58,7 @@ class ModelRouter:
         if override_decision:
             logger.debug(
                 "Override rule matched",
-                target=override_decision.target,
+                provider=override_decision.provider,
                 model=override_decision.model,
                 reason=override_decision.reason,
             )
@@ -69,7 +67,6 @@ class ModelRouter:
         # Default: passthrough to Anthropic
         logger.debug("Using default passthrough to Anthropic")
         return RouterDecision(
-            target="anthropic",
             model="passthrough",
             reason="No routing rules matched, using passthrough",
             provider="anthropic",
@@ -120,7 +117,6 @@ class ModelRouter:
                     config_overrides=override.config,
                 )
                 return RouterDecision(
-                    target=resolved_provider,
                     model=resolved_model,
                     reason=f"Override rule {i + 1} matched: {override.when}",
                     provider=resolved_provider,
@@ -445,8 +441,7 @@ class ModelRouter:
         else:
             # For unknown providers, assume they're OpenAI-compatible
             logger.warning(
-                f"Unknown provider '{provider}', defaulting to "
-                "openai adapter"
+                f"Unknown provider '{provider}', defaulting to openai adapter"
             )
             return "openai"
 

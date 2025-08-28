@@ -155,7 +155,6 @@ class ProxyRouter:
             logger.info(
                 "Routing decision",
                 request_id=request_id,
-                target=decision.target,
                 model=decision.model,
                 provider=decision.provider,
                 adapter=decision.adapter,

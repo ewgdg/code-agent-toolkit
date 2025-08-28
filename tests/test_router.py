@@ -43,7 +43,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-4o-reasoning"
         assert "override rule 1 matched" in decision.reason.lower()
 
@@ -68,7 +68,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-4o-reasoning"
 
     def test_plan_mode_not_detected(self):
@@ -90,7 +90,7 @@ class TestModelRouter:
         decision = self.router.decide_route(headers, request_data)
 
         # Should fallback to default (Anthropic passthrough)
-        assert decision.target == "anthropic"
+        assert decision.provider == "anthropic"
         assert decision.model == "passthrough"
 
     def test_haiku_model_detection(self):
@@ -107,7 +107,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-5-mini"
         assert "override rule 1 matched" in decision.reason.lower()
 
@@ -118,7 +118,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "anthropic"
+        assert decision.provider == "anthropic"
         assert decision.model == "passthrough"
         assert "passthrough" in decision.reason.lower()
 
@@ -176,7 +176,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-4o-mini"
         assert "override rule 1 matched" in decision.reason.lower()
 
@@ -192,7 +192,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-5"
         assert "override rule 1 matched" in decision.reason.lower()
 
@@ -214,7 +214,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-4o"
         assert "override rule 1 matched" in decision.reason.lower()
 
@@ -224,7 +224,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "anthropic"
+        assert decision.provider == "anthropic"
         assert decision.model == "passthrough"
 
     def test_override_rules_precedence(self):
@@ -248,7 +248,7 @@ class TestModelRouter:
         decision = self.router.decide_route(headers, request_data)
 
         # Should use first matching rule
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-4o-mini"
 
     def test_override_rules_exact_model_match(self):
@@ -266,7 +266,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-5"
 
         # Should not match different model
@@ -274,7 +274,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "anthropic"
+        assert decision.provider == "anthropic"
         assert decision.model == "passthrough"
 
     def test_override_rules_header_list_values(self):
@@ -292,7 +292,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-5"
 
         # Should match second value
@@ -300,7 +300,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-5"
 
         # Should not match other values
@@ -308,7 +308,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "anthropic"
+        assert decision.provider == "anthropic"
         assert decision.model == "passthrough"
 
     def test_override_rules_tool_detection_complex(self):
@@ -331,7 +331,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-4o"
 
         # Should not match when tool is not available
@@ -343,7 +343,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "anthropic"
+        assert decision.provider == "anthropic"
         assert decision.model == "passthrough"
 
     def test_override_rules_provider_parsing(self):
@@ -366,7 +366,7 @@ class TestModelRouter:
 
             decision = self.router.decide_route(headers, request_data)
 
-            assert decision.target == expected_provider
+            assert decision.provider == expected_provider
             assert decision.model == expected_model
 
     def test_override_rules_no_match(self):
@@ -381,7 +381,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "anthropic"
+        assert decision.provider == "anthropic"
         assert decision.model == "passthrough"
         assert "no routing rules matched" in decision.reason.lower()
 
@@ -394,7 +394,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "anthropic"
+        assert decision.provider == "anthropic"
         assert decision.model == "passthrough"
 
     def test_override_rule_with_model_config(self):
@@ -416,7 +416,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-5"
         assert decision.model_config == {
             "reasoning": {"effort": "high"},
@@ -449,7 +449,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "anthropic"
+        assert decision.provider == "anthropic"
         assert decision.model == "claude-3-sonnet"
         assert "override rule 1 matched" in decision.reason.lower()
 
@@ -483,7 +483,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-4o"
 
     def test_user_regex_not_detected(self):
@@ -508,7 +508,7 @@ class TestModelRouter:
         decision = self.router.decide_route(headers, request_data)
 
         # Should fallback to default (Anthropic passthrough)
-        assert decision.target == "anthropic"
+        assert decision.provider == "anthropic"
         assert decision.model == "passthrough"
 
     def test_user_regex_last_user_message_only(self):
@@ -533,7 +533,7 @@ class TestModelRouter:
         decision = self.router.decide_route(headers, request_data)
 
         # Should NOT match because the last user message doesn't contain "urgent help"
-        assert decision.target == "anthropic"
+        assert decision.provider == "anthropic"
         assert decision.model == "passthrough"
 
     def test_user_regex_matches_last_user_message(self):
@@ -558,7 +558,7 @@ class TestModelRouter:
         decision = self.router.decide_route(headers, request_data)
 
         # Should match because the last user message contains "urgent help"
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-5"
 
     def test_user_regex_case_insensitive(self):
@@ -580,7 +580,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-4o-mini"
 
     def test_provider_based_routing(self):
@@ -608,7 +608,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "llama-local"
+        assert decision.provider == "llama-local"
         assert decision.model == "llama3.1"
         assert decision.provider == "llama-local"
         assert decision.adapter == "openai"
@@ -627,7 +627,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-4o"
         assert decision.provider == "openai"
         assert decision.adapter == "openai"  # default for openai
@@ -647,7 +647,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "unknown-provider"
+        assert decision.provider == "unknown-provider"
         assert decision.model == "unknown-model"
         assert decision.provider == "unknown-provider"
         assert decision.adapter == "openai"  # default for unknown
@@ -659,7 +659,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "anthropic"
+        assert decision.provider == "anthropic"
         assert decision.model == "passthrough"
         assert decision.provider == "anthropic"
         assert decision.adapter == "anthropic-passthrough"
@@ -670,7 +670,7 @@ class TestModelRouter:
             OverrideRule(
                 when={"request": {"model_regex": "test"}},
                 model="openai/gpt-5",
-                model_config={
+                config={
                     "reasoning": {"effort": "low"},  # default priority
                     "temperature": 0.3,  # default priority
                     "max_tokens": 1000,  # default priority
@@ -683,7 +683,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-5"
         assert "override rule 1 matched" in decision.reason.lower()
 
@@ -693,7 +693,7 @@ class TestModelRouter:
             OverrideRule(
                 when={"request": {"model_regex": "test"}},
                 model="openai/gpt-5",
-                model_config={
+                config={
                     "reasoning": {
                         "effort": ModelConfigEntry(value="low", priority="always"),
                         "summary": "auto",  # default priority
@@ -709,7 +709,7 @@ class TestModelRouter:
 
         decision = self.router.decide_route(headers, request_data)
 
-        assert decision.target == "openai"
+        assert decision.provider == "openai"
         assert decision.model == "gpt-5"
         assert "override rule 1 matched" in decision.reason.lower()
 

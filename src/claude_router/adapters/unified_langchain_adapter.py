@@ -66,7 +66,7 @@ class UnifiedLangChainAdapter(UnifiedRequestAdapter):
         # Check if it's streaming (AsyncIterator) or non-streaming
         if isinstance(response, AsyncIterator):
             # Streaming response
-            async def stream_generator() -> AsyncGenerator[str, None]:
+            async def stream_generator() -> AsyncGenerator[str]:
                 try:
                     async for line in response:
                         yield line

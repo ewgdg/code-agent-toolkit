@@ -1,7 +1,7 @@
 """Custom ChatOpenAI implementation that extracts custom fields like reasoning_content."""
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, override
 
 import openai
 import structlog
@@ -12,7 +12,6 @@ from langchain_core.messages import (
 )
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
-from typing_extensions import override
 
 log = structlog.get_logger(__name__)
 
