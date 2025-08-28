@@ -496,7 +496,7 @@ class ModelRouter:
 
         # Log only what changed (only at top level to avoid duplicates)
         if changed_values and not _is_nested:
-            logger.debug("Model config overridden", changed=changed_values)
+            logger.info("Model config overridden", changed=changed_values)
 
         return result
 

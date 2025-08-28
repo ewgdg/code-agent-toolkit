@@ -153,7 +153,7 @@ class ProxyRouter:
             # Make routing decision
             decision = self.router.decide_route(headers, request_data)
 
-            logger.debug(
+            logger.info(
                 "Routing decision",
                 request_id=request_id,
                 model=decision.model,
