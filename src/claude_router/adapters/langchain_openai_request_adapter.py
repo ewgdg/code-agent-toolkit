@@ -5,6 +5,7 @@ This adapter replaces the existing 4 separate adapters with 2 consolidated, feat
 achieving significant code reduction while maintaining complete feature parity.
 """
 
+import itertools
 import json
 import os
 from collections.abc import AsyncIterator, Callable
@@ -28,6 +29,7 @@ from ..router import ModelRouter
 from .custom_chatopenai import ChatOpenAIWithCustomFields
 
 logger = structlog.get_logger(__name__)
+
 
 class LangChainOpenAIRequestAdapter:
     """
@@ -161,8 +163,14 @@ class LangChainOpenAIRequestAdapter:
 
         messages: list[BaseMessage] = []
 
+        # Handle top‑level system prompt if provided
+        anthropic_system_content = anthropic_request.get("system")
+        system_message = {"role": "system", "content": anthropic_system_content}
+
         # Conversation messages
-        for msg in anthropic_request.get("messages", []):
+        for msg in itertools.chain(
+            (system_message,), anthropic_request.get("messages", [])
+        ):
             role = (msg.get("role") or "").lower()
             content = msg.get("content")
 
