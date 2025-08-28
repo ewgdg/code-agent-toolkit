@@ -46,6 +46,7 @@ overrides:
         user_regex: '<system-reminder>[\s\S]*\b(?:plan mode is (?:activated|active|triggered|on)|in plan mode)\b[\s\S]*</system-reminder>'
     provider: "openai"
     model: "gpt-5"
+    support_reasoning: true
     config:
       reasoning:
         effort: 
@@ -100,7 +101,7 @@ overrides:
 
   - when:
       request:
-        model_regex: '^gpt[-0-9]+.*'
+        model_regex: '^gpt-[0-9]+.*'
     provider: "openai"
 
   - when:
