@@ -19,7 +19,7 @@ cp .env.example .env
 # Edit .env with your OPENAI_API_KEY
 
 # Run
-uv run claude-router
+uv run claude-router --config config/router.yaml
 ```
 
 Point Claude Code CLI to `http://localhost:8787` to use the router.
@@ -41,7 +41,12 @@ overrides:
   - when:
       request:
         user_regex: '<system-reminder>[\s\S]*plan mode[\s\S]*</system-reminder>'
-    model: "openai/gpt-5?reasoning.effort=high&reasoning.summary=auto"
+    provider: "openai"
+    model: "gpt-5"
+    config:
+      reasoning:
+        effort: "high"
+        summary: "auto"
 ```
 
 ## Development
