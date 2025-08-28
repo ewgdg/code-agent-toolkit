@@ -31,9 +31,9 @@ logger = structlog.get_logger(__name__)
 
 
 class ProxyRouter:
-    def __init__(self, config_path: Path):
-        self.config_loader = ConfigLoader(config_path, enable_hot_reload=True)
-        self.config = self.config_loader.get_config()
+    def __init__(self, config_loader: ConfigLoader):
+        self.config_loader = config_loader
+        self.config = config_loader.get_config()
 
         # Initialize components
         self.router = ModelRouter(self.config)
@@ -207,26 +207,23 @@ class ProxyRouter:
         await self.passthrough_adapter.close()
 
 
-def create_app(config_path: Path) -> FastAPI:
-    """Create FastAPI application."""
-    proxy = ProxyRouter(config_path)
-
-    # Lifecycle events are now handled via FastAPI lifespan in ProxyRouter
-    # No explicit startup event registration needed here.
-
+def create_app(config_loader: ConfigLoader) -> FastAPI:
+    """Create FastAPI application with given config loader."""
+    proxy = ProxyRouter(config_loader)
     return proxy.app
 
 
 def main() -> None:
     """Main entry point."""
     import argparse
+    import os
+    import signal
+    import sys
+    from threading import Event
 
     from dotenv import load_dotenv
 
     # Load environment variables from .env file (in project root)
-    # import os
-    # project_root = Path(__file__).parent.parent.parent
-    # dotenv_path = project_root / ".env"
     load_dotenv(override=True)
 
     parser = argparse.ArgumentParser(description="Claude Code Model Router")
@@ -245,22 +242,99 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # Create app and get config
-    app = create_app(args.config)
+    # Global state for server control
+    server_restart_event = Event()
+    should_exit = Event()
 
-    # Load config to get listen address
-    from .config import ConfigLoader
+    def restart_server():
+        """Callback to trigger server restart on config change."""
+        logger.info("Config changed, restarting server")
+        server_restart_event.set()
 
-    config_loader = ConfigLoader(args.config)
-    config = config_loader.get_config()
+    def signal_handler(signum, frame):
+        """Handle shutdown signals."""
+        logger.info("Shutdown signal received")
+        should_exit.set()
+        server_restart_event.set()
 
-    # Parse listen address from config
-    listen_parts = config.router.listen.split(":")
-    host = listen_parts[0] if listen_parts[0] != "0.0.0.0" else args.host
-    port = int(listen_parts[1]) if len(listen_parts) > 1 else args.port
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
-    # Run server
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    while not should_exit.is_set():
+        try:
+            # Create config loader with restart callback
+            config_loader = ConfigLoader(
+                args.config, enable_hot_reload=True, reload_callback=restart_server
+            )
+            config = config_loader.get_config()
+
+            # Parse listen address from config
+            listen_parts = config.router.listen.split(":")
+            host = listen_parts[0] if listen_parts[0] != "0.0.0.0" else args.host
+            port = int(listen_parts[1]) if len(listen_parts) > 1 else args.port
+
+            # Create fresh app instance
+            app = create_app(config_loader)
+
+            logger.info(f"Starting server on {host}:{port}")
+
+            # Run uvicorn server in thread with proper control
+            import threading
+            import asyncio
+
+            # Create uvicorn server with clean shutdown control
+            server_config = uvicorn.Config(
+                app=app,
+                host=host,
+                port=port,
+                log_level="info",
+                access_log=False,  # Reduce noise
+            )
+            server = uvicorn.Server(server_config)
+
+            def run_server():
+                """Run server in thread with asyncio event loop."""
+                try:
+                    asyncio.run(server.serve())
+                except Exception as e:
+                    logger.error(f"Server error: {e}")
+
+            server_thread = threading.Thread(target=run_server, daemon=True)
+            server_thread.start()
+
+            # Wait for restart signal or shutdown
+            server_restart_event.wait()
+            server_restart_event.clear()
+
+            if not should_exit.is_set():
+                logger.info("Stopping server for restart")
+
+                # Signal server to shutdown gracefully
+                server.should_exit = True
+                server_thread.join(timeout=5)
+
+                # Clean up config loader
+                config_loader.stop_hot_reload()
+
+                logger.info("Server stopped, restarting...")
+            else:
+                logger.info("Shutting down server")
+                server.should_exit = True
+                server_thread.join(timeout=5)
+                config_loader.stop_hot_reload()
+                break
+
+        except KeyboardInterrupt:
+            logger.info("Keyboard interrupt received")
+            should_exit.set()
+            break
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            should_exit.set()
+            break
+
+    logger.info("Server shutdown complete")
 
 
 if __name__ == "__main__":

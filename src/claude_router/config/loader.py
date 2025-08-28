@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from types import TracebackType
+from typing import Callable
 
 import structlog
 import yaml
@@ -24,12 +25,16 @@ class ConfigReloadHandler(FileSystemEventHandler):
         if event.src_path == str(self.config_loader.config_path):
             logger.info("Config file changed, reloading", path=event.src_path)
             self.config_loader.reload()
+            # Trigger callback if provided
+            if self.config_loader.reload_callback:
+                self.config_loader.reload_callback()
 
 
 class ConfigLoader:
-    def __init__(self, config_path: Path, enable_hot_reload: bool = False):
+    def __init__(self, config_path: Path, enable_hot_reload: bool = False, reload_callback: Callable[[], None] | None = None):
         self.config_path = config_path
         self.enable_hot_reload = enable_hot_reload
+        self.reload_callback = reload_callback
         self._config: Config | None = None
         self._last_modified: float | None = None
         self._observer: BaseObserver | None = None
