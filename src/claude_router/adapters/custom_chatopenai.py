@@ -88,14 +88,6 @@ class ChatOpenAIWithCustomFields(ChatOpenAI):
                         # Add the custom field if we haven't already found it
                         if field_name not in custom_fields:
                             custom_fields[field_name] = field_value
-                            log.debug(
-                                "Discovered custom field",
-                                field_name=field_name,
-                                source_path=path + [field_name],
-                                value_preview=str(field_value)[:100]
-                                if isinstance(field_value, str)
-                                else str(field_value)[:100],
-                            )
 
             except Exception as e:
                 log.debug(
@@ -140,12 +132,6 @@ class ChatOpenAIWithCustomFields(ChatOpenAI):
             chunk.additional_kwargs = {}
 
         chunk.additional_kwargs.update(custom_fields)
-
-        log.debug(
-            "Added custom fields to chunk additional_kwargs",
-            context=context,
-            custom_fields=list(custom_fields.keys()),
-        )
 
     @override
     def _create_chat_result(

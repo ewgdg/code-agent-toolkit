@@ -5,6 +5,7 @@ This adapter replaces the existing 4 separate adapters with 2 consolidated, feat
 achieving significant code reduction while maintaining complete feature parity.
 """
 
+import hashlib
 import itertools
 import json
 import os
@@ -84,6 +85,7 @@ class LangChainOpenAIRequestAdapter:
                 model_config,
                 use_responses_api=use_responses_api,
                 support_reasoning=support_reasoning,
+                provider_config=provider_config,
             )
 
             logger.info(
@@ -315,6 +317,7 @@ class LangChainOpenAIRequestAdapter:
         model_config: dict[str, Any | ModelConfigEntry] | None = None,
         use_responses_api: bool = True,
         support_reasoning: bool = False,
+        provider_config: ProviderConfig | None = None,
     ) -> dict[str, Any]:
         """Prepare a unified LangChain-executable payload for OpenAI models."""
         # Tools to be bound via LangChain
@@ -357,6 +360,46 @@ class LangChainOpenAIRequestAdapter:
         # Apply model configuration overrides with proper priority handling
         if model_config:
             params = self.router._apply_granular_config_overrides(params, model_config)
+
+        # Add cache key using service name + API key hash, fallback to metadata.user_id
+        service_name = "claude-router"
+        user_identifier_source = None
+        user_identifier = None
+
+        # Try API key first
+        if provider_config and provider_config.api_key_env:
+            api_key = os.getenv(provider_config.api_key_env)
+            if api_key:
+                user_identifier = api_key
+                user_identifier_source = "api_key"
+
+        # Fallback to metadata.user_id if API key not available
+        if not user_identifier:
+            user_id = anthropic_request.get("metadata", {}).get("user_id")
+            if user_id:
+                user_identifier = user_id
+                user_identifier_source = "user_id"
+
+        if user_identifier:
+            cache_input = f"{service_name}:{user_identifier}"
+            prompt_cache_key = hashlib.blake2b(
+                cache_input.encode(), digest_size=8
+            ).hexdigest()
+
+            # Use appropriate parameter based on API type
+            if use_responses_api:
+                params["prompt_cache_key"] = prompt_cache_key
+            else:
+                params["user"] = prompt_cache_key
+
+            logger.debug(
+                "Generated prompt cache key for KV cache reuse",
+                service=service_name,
+                prompt_cache_key=prompt_cache_key,
+                provider=provider_config.base_url if provider_config else "unknown",
+                source=user_identifier_source,
+                use_responses_api=use_responses_api,
+            )
 
         return {
             "model": model,

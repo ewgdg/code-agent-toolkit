@@ -121,11 +121,6 @@ class PassthroughAdapter:
                                 # Only keep thinking blocks with valid signatures
                                 if "signature" in block and block["signature"]:
                                     cleaned_content.append(block)
-                                else:
-                                    logger.debug(
-                                        "Stripped thinking block without signature",
-                                        has_thinking=bool(block.get("thinking")),
-                                    )
                             else:
                                 cleaned_content.append(block)
 
