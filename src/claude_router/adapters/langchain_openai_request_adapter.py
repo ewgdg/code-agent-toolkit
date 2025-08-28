@@ -381,9 +381,9 @@ class LangChainOpenAIRequestAdapter:
                 user_identifier_source = "user_id"
 
         if user_identifier:
-            cache_input = f"{service_name}:{user_identifier}"
+            prompt_cache_key_input = f"{service_name}:{user_identifier}"
             prompt_cache_key = hashlib.blake2b(
-                cache_input.encode(), digest_size=8
+                prompt_cache_key_input.encode(), digest_size=8
             ).hexdigest()
 
             # Use appropriate parameter based on API type
