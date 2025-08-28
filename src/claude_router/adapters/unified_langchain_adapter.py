@@ -44,8 +44,10 @@ class UnifiedLangChainAdapter(UnifiedRequestAdapter):
                 detail=f"Provider '{decision.provider}' not configured",
             )
 
-        # Determine API type from provider configuration
-        use_responses_api = getattr(provider_config, "use_responses_api", True)
+        # Determine API type based on adapter type
+        # True for "openai" adapter (official OpenAI API with Responses API support)
+        # False for "openai-compatible" adapter (third-party APIs)
+        use_responses_api = provider_config.adapter == "openai"
 
         adapted_request = await self.request_adapter.adapt_request(
             anthropic_request=request_data,

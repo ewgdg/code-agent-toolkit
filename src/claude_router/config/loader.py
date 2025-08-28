@@ -1,7 +1,7 @@
 import os
+from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
-from typing import Callable
 
 import structlog
 import yaml
@@ -31,7 +31,12 @@ class ConfigReloadHandler(FileSystemEventHandler):
 
 
 class ConfigLoader:
-    def __init__(self, config_path: Path, enable_hot_reload: bool = False, reload_callback: Callable[[], None] | None = None):
+    def __init__(
+        self,
+        config_path: Path,
+        enable_hot_reload: bool = False,
+        reload_callback: Callable[[], None] | None = None,
+    ):
         self.config_path = config_path
         self.enable_hot_reload = enable_hot_reload
         self.reload_callback = reload_callback

@@ -11,11 +11,9 @@ providers:
     base_url: "https://api.openai.com/v1"
     adapter: "openai"
     api_key_env: "OPENAI_API_KEY"
-    use_responses_api: True
   llama:
     base_url: "http://127.0.0.1:8080/v1"
-    adapter: "openai"
-    use_responses_api: False
+    adapter: "openai-compatible"
 
 # OpenAI configuration
 openai:

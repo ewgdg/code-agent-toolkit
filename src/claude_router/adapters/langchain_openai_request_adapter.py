@@ -5,7 +5,6 @@ This adapter replaces the existing 4 separate adapters with 2 consolidated, feat
 achieving significant code reduction while maintaining complete feature parity.
 """
 
-import hashlib
 import itertools
 import json
 import os

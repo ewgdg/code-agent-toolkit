@@ -1,7 +1,7 @@
 import json
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncGenerator
 
 import structlog
 import uvicorn
@@ -169,7 +169,7 @@ class ProxyRouter:
                     return await self.passthrough_adapter.handle_request(
                         method, f"/{path}", headers, body, query_params
                     )
-                elif decision.adapter == "openai":
+                elif decision.adapter in ("openai", "openai-compatible"):
                     return await self.unified_langchain_adapter.handle_request(
                         request_data, decision, headers, request_id
                     )
@@ -200,7 +200,7 @@ class ProxyRouter:
         )
 
     @asynccontextmanager
-    async def _lifespan(self, app: FastAPI) -> AsyncGenerator[None, None]:
+    async def _lifespan(self, app: FastAPI) -> AsyncGenerator[None]:
         """FastAPI lifespan context that runs startup tasks."""
         await self.startup()
         yield
@@ -216,9 +216,7 @@ def create_app(config_loader: ConfigLoader) -> FastAPI:
 def main() -> None:
     """Main entry point."""
     import argparse
-    import os
     import signal
-    import sys
     from threading import Event
 
     from dotenv import load_dotenv
@@ -280,8 +278,8 @@ def main() -> None:
             logger.info(f"Starting server on {host}:{port}")
 
             # Run uvicorn server in thread with proper control
-            import threading
             import asyncio
+            import threading
 
             # Create uvicorn server with clean shutdown control
             server_config = uvicorn.Config(

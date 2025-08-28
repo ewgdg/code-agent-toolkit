@@ -81,10 +81,10 @@ class OpenAIConfig(BaseModel):
         - 1-5K: low (simple tasks)
         - 5K-15K: medium (balanced tasks)
         - 15K+: high (complex reasoning)
-        
+
         Args:
             request_data: The Anthropic request data
-            
+
         Returns:
             Reasoning effort level string
         """
@@ -136,11 +136,6 @@ class ProviderConfig(BaseModel):
     timeouts_ms: TimeoutsConfig | None = Field(
         default=None, description="Provider-specific timeouts"
     )
-    use_responses_api: bool = Field(
-        default=True,
-        description="For openai adapter: True for Responses API, "
-        "False for Chat Completions API",
-    )
 
     @field_validator("adapter")
     @classmethod
@@ -148,6 +143,7 @@ class ProviderConfig(BaseModel):
         valid_adapters = [
             "anthropic-passthrough",
             "openai",
+            "openai-compatible",
         ]
         if v not in valid_adapters:
             raise ValueError(f"adapter must be one of: {', '.join(valid_adapters)}")

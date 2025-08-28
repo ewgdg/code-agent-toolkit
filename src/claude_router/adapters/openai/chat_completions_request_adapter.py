@@ -73,7 +73,9 @@ class ChatCompletionsRequestAdapter:
 
         # Add reasoning effort for supported models
         if self.config.openai.supports_reasoning(model):
-            reasoning_effort = self.config.openai.get_reasoning_effort(anthropic_request)
+            reasoning_effort = self.config.openai.get_reasoning_effort(
+                anthropic_request
+            )
             logger.debug(
                 "Reasoning effort calculated",
                 effort=reasoning_effort,

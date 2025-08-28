@@ -127,39 +127,56 @@ class TestModelRouter:
         """Test reasoning effort mapping from thinking budget tokens."""
         # Test minimal (no budget)
         assert self.router.config.openai.get_reasoning_effort({}) == "minimal"
-        assert self.router.config.openai.get_reasoning_effort({"thinking": {}}) == "minimal"
         assert (
-            self.router.config.openai.get_reasoning_effort({"thinking": {"budget_tokens": 0}})
+            self.router.config.openai.get_reasoning_effort({"thinking": {}})
+            == "minimal"
+        )
+        assert (
+            self.router.config.openai.get_reasoning_effort(
+                {"thinking": {"budget_tokens": 0}}
+            )
             == "minimal"
         )
 
         # Test low effort
         assert (
-            self.router.config.openai.get_reasoning_effort({"thinking": {"budget_tokens": 2000}})
+            self.router.config.openai.get_reasoning_effort(
+                {"thinking": {"budget_tokens": 2000}}
+            )
             == "low"
         )
         assert (
-            self.router.config.openai.get_reasoning_effort({"thinking": {"budget_tokens": 5000}})
+            self.router.config.openai.get_reasoning_effort(
+                {"thinking": {"budget_tokens": 5000}}
+            )
             == "low"
         )
 
         # Test medium effort
         assert (
-            self.router.config.openai.get_reasoning_effort({"thinking": {"budget_tokens": 8000}})
+            self.router.config.openai.get_reasoning_effort(
+                {"thinking": {"budget_tokens": 8000}}
+            )
             == "medium"
         )
         assert (
-            self.router.config.openai.get_reasoning_effort({"thinking": {"budget_tokens": 15000}})
+            self.router.config.openai.get_reasoning_effort(
+                {"thinking": {"budget_tokens": 15000}}
+            )
             == "medium"
         )
 
         # Test high effort
         assert (
-            self.router.config.openai.get_reasoning_effort({"thinking": {"budget_tokens": 20000}})
+            self.router.config.openai.get_reasoning_effort(
+                {"thinking": {"budget_tokens": 20000}}
+            )
             == "high"
         )
         assert (
-            self.router.config.openai.get_reasoning_effort({"thinking": {"budget_tokens": 32000}})
+            self.router.config.openai.get_reasoning_effort(
+                {"thinking": {"budget_tokens": 32000}}
+            )
             == "high"
         )
 
