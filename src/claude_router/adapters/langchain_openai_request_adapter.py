@@ -389,18 +389,28 @@ class LangChainOpenAIRequestAdapter:
         """
         openai_tools = []
         for tool in anthropic_tools:
+            # Clean parameters schema for llama server compatibility
+            input_schema = tool.get("input_schema", {})
+            cleaned_params = self._clean_parameters_schema(input_schema)
+
             openai_tool = {
                 "type": "function",
                 "function": {
                     "name": tool.get("name"),
                     "description": tool.get("description", ""),
-                    "parameters": tool.get("input_schema", {}),
+                    "parameters": cleaned_params,
                 },
             }
             # openai_tool = convert_to_openai_tool(tool=tool)
             openai_tools.append(openai_tool)
 
         return openai_tools
+
+    def _clean_parameters_schema(self, schema: dict[str, Any]) -> dict[str, Any]:
+        schema["properties"] = schema.get("properties", {})
+        schema["required"] = schema.get("required", [])
+
+        return schema
 
     async def make_request(
         self,
