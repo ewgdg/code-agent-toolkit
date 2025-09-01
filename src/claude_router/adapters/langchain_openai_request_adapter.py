@@ -175,7 +175,7 @@ class LangChainOpenAIRequestAdapter:
             role = (msg.get("role") or "").lower()
             content = msg.get("content")
 
-            if content is None:
+            if not content:
                 continue
 
             content_parts: list[str | dict[str, Any]] = []
@@ -255,7 +255,7 @@ class LangChainOpenAIRequestAdapter:
                 elif isinstance(block, str):
                     content_parts.append(_text_block(block))
 
-                else:
+                elif block:
                     # Any other primitive or object -> stringify
                     content_parts.append(_text_block(str(block)))
 
@@ -269,12 +269,14 @@ class LangChainOpenAIRequestAdapter:
 
             elif role == "assistant":
                 # Emit AIMessage even if only tool_calls exist (content can be empty string)
-                messages.append(
-                    AIMessage(
-                        content=content_parts,
-                        tool_calls=[] if tool_calls is None else tool_calls,
+                # When content_parts is empty, pass empty string to prevent template errors
+                if content_parts or tool_calls:
+                    messages.append(
+                        AIMessage(
+                            content=content_parts if content_parts else "",
+                            tool_calls=[] if tool_calls is None else tool_calls,
+                        )
                     )
-                )
 
             else:
                 # Unknown role: default to HumanMessage with provided content parts
