@@ -69,6 +69,12 @@ overrides:
         summary: "auto"
 ```
 
+## Default Behavior
+
+### Reasoning Conversion
+
+If no reasoning config is specified for a request and the selected OpenAI model supports reasoning, the router applies minimal reasoning conversion by default.
+
 ## Development
 
 ```bash
