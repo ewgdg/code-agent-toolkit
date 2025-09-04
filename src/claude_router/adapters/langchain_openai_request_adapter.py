@@ -168,9 +168,25 @@ class LangChainOpenAIRequestAdapter:
         anthropic_system_content = anthropic_request.get("system")
         system_message = {"role": "system", "content": anthropic_system_content}
 
+        anthropic_request_messages: list[dict] = anthropic_request.get("messages", [])
+        len_messages = len(anthropic_request_messages)
+        last_user_message_index = next(
+            (
+                i
+                for i, msg in enumerate(anthropic_request_messages)
+                if msg.get("role") == "user"
+            ),
+            -1,
+        )
+
+        # offset the index bc of the system message we are going to prepend
+        if last_user_message_index >= 0:
+            last_user_message_index += 1
+        len_messages += 1
+
         # Conversation messages
-        for msg in itertools.chain(
-            (system_message,), anthropic_request.get("messages", [])
+        for msg_i, msg in enumerate(
+            itertools.chain((system_message,), anthropic_request_messages)
         ):
             role = (msg.get("role") or "").lower()
             content = msg.get("content")
@@ -180,6 +196,7 @@ class LangChainOpenAIRequestAdapter:
 
             content_parts: list[str | dict[str, Any]] = []
             tool_calls: list[dict[str, Any]] = []
+            reasoning_content_parts: list[str | dict[str, Any]] = []
 
             # Normalize to iterable of blocks
             blocks = content if isinstance(content, list) else [content]
@@ -192,10 +209,17 @@ class LangChainOpenAIRequestAdapter:
                         content_parts.append(_text_block(block.get("text", "")))
 
                     elif btype == "thinking":
-                        # thinking = block.get("thinking", "")
-                        # if thinking:
-                        #     thinking = "<think>" + thinking + "</think>"
-                        #     content_parts.append(_text_block(thinking))
+                        # we only include relevant reasoning span.
+                        # the reasoning items for the tool calls.
+                        # <remark>
+                        # for openai api, there is `reasoning.encrypted_content`
+                        # or `previous_response_id` to retain the reasoning context.
+                        # </remark>
+                        thinking = block.get("thinking", "")
+                        if thinking:
+                            # currently there is not a good way to include reasoning items for openai-compatible endpoints
+                            thinking = "<think>" + thinking + "</think>"
+                            reasoning_content_parts.append(_text_block(thinking))
                         pass
 
                     elif btype == "tool_use":
@@ -271,13 +295,15 @@ class LangChainOpenAIRequestAdapter:
                 # Emit AIMessage even if only tool_calls exist (content can be empty string)
                 # When content_parts is empty, pass empty string to prevent template errors
                 if content_parts or tool_calls:
+                    if tool_calls and reasoning_content_parts:
+                        reasoning_content_parts.extend(content_parts)
+                        content_parts = reasoning_content_parts
                     messages.append(
                         AIMessage(
                             content=content_parts if content_parts else "",
                             tool_calls=[] if tool_calls is None else tool_calls,
                         )
                     )
-
             else:
                 # Unknown role: default to HumanMessage with provided content parts
                 if content_parts:
