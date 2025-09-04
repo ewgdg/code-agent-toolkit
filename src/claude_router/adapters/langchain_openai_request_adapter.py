@@ -218,7 +218,7 @@ class LangChainOpenAIRequestAdapter:
                         thinking = block.get("thinking", "")
                         if thinking:
                             # currently there is not a good way to include reasoning items for openai-compatible endpoints
-                            thinking = "<think>" + thinking + "</think>"
+                            thinking = "\n<think>\n" + thinking + "\n</think>\n"
                             reasoning_content_parts.append(_text_block(thinking))
                         pass
 
