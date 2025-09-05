@@ -90,19 +90,34 @@ def _function_call_block(name: str, args: Any, call_id: str) -> dict[str, Any]:
     return result
 
 
-def _custom_field_block(field_key: str, field_value: Any) -> dict[str, Any] | None:
-    """Create a custom field block based on configuration mapping."""
-    if field_key not in CUSTOM_FIELD_MAPPING:
+def _custom_field_block(
+    field_key: str, field_value: Any
+) -> tuple[dict[str, Any], str] | None:
+    """Create a custom field block based on configuration mapping.
+
+    Defensive against malformed entries in CUSTOM_FIELD_MAPPING. If an entry is
+    missing required keys ("block_type" or "field_name") or is not a dict, we
+    log and return None instead of raising.
+    """
+    config = CUSTOM_FIELD_MAPPING.get(field_key)
+    if not isinstance(config, dict):
         return None
 
-    config = CUSTOM_FIELD_MAPPING[field_key]
-    block_type = config["block_type"]
-    field_name = config["field_name"]
+    block_type = config.get("block_type")
+    field_name = config.get("field_name")
+    if not isinstance(block_type, str) or not isinstance(field_name, str):
+        log.warning(
+            "Malformed CUSTOM_FIELD_MAPPING entry; skipping custom field",
+            field_key=field_key,
+            config=config,
+        )
+        return None
 
-    return {
-        "type": block_type,
-        field_name: str(field_value),
-    }
+    block = {"type": block_type, field_name: str(field_value)}
+    return block, field_name
+
+
+# (removed helper; we now return field_name from _custom_field_block)
 
 
 def _function_output_block(call_id: str, output: Any) -> dict[str, Any]:
@@ -187,8 +202,9 @@ def _content_blocks_from_message(message: AIMessage) -> list[dict[str, Any]]:
         # Process all configured custom fields
         for key, value in message.additional_kwargs.items():
             if value:  # Only process non-empty values
-                custom_block = _custom_field_block(key, value)
-                if custom_block:
+                result = _custom_field_block(key, value)
+                if result:
+                    custom_block, _field_name = result
                     log.info(
                         "Found custom field in additional_kwargs",
                         key=key,
@@ -491,10 +507,10 @@ class LangChainOpenAIResponseAdapter:
                     # Process all configured custom fields
                     for key, value in chunk.additional_kwargs.items():
                         if value:  # Only process non-empty values
-                            custom_block = _custom_field_block(key, value)
-                            if custom_block:
+                            result = _custom_field_block(key, value)
+                            if result:
+                                custom_block, field_name = result
                                 block_type = custom_block["type"]
-                                field_name = CUSTOM_FIELD_MAPPING[key]["field_name"]
 
                                 # Start custom field content block if not already started
                                 if current_block_type != block_type:
@@ -516,7 +532,10 @@ class LangChainOpenAIResponseAdapter:
 
                                 # Send custom field delta
                                 yield self._send_delta(
-                                    content_block_index, block_type, field_name, value
+                                    content_block_index,
+                                    block_type,
+                                    field_name,
+                                    str(value),
                                 )
 
                 # Handle both text content and structured content (v1 reasoning)
@@ -720,8 +739,12 @@ class LangChainOpenAIResponseAdapter:
                 custom_fields_summary = {}
                 for key, value in accumulated_message.additional_kwargs.items():
                     if key in CUSTOM_FIELD_MAPPING:
+                        cfg = CUSTOM_FIELD_MAPPING.get(key) or {}
+                        block_type = (
+                            cfg.get("block_type") if isinstance(cfg, dict) else None
+                        ) or "unknown"
                         custom_fields_summary[key] = {
-                            "block_type": CUSTOM_FIELD_MAPPING[key]["block_type"],
+                            "block_type": block_type,
                             "content_preview": str(value)[:100] if value else "",
                             "content_length": len(str(value)) if value else 0,
                         }
