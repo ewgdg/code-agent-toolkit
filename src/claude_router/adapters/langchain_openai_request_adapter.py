@@ -223,13 +223,15 @@ class LangChainOpenAIRequestAdapter:
                         # we only include relevant reasoning span.
                         # the reasoning items for the tool calls in this turn.
                         # <remark>
-                        # for openai api, there is `reasoning.encrypted_content`
+                        # for openai api, we should rely on `reasoning.id`
                         # or `previous_response_id` to retain the reasoning context.
+                        # but we are getting requests from anthropic,
+                        # so the reasoning items might not be stored in openai server.
                         # </remark>
                         thinking = block.get("thinking", "")
                         if thinking and msg_i > last_user_message_index:
-                            # currently there is not a good way to include reasoning items for openai-compatible endpoints
-                            thinking = "\n<think>\n" + thinking + "\n</think>\n"
+                            # currently there is no a good way to include reasoning items for openai-compatible endpoints
+                            thinking = f"<think>{thinking}</think>"
                             reasoning_content_parts.append(_text_block(thinking))
                         pass
 
