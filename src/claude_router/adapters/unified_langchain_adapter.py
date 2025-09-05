@@ -63,7 +63,9 @@ class UnifiedLangChainAdapter(UnifiedRequestAdapter):
             adapted_request, headers, provider_config, use_responses_api
         )
         # Handle the response using the LangChain response adapter
-        response = await self.response_adapter.adapt_response(lc_response)
+        response = await self.response_adapter.adapt_response(
+            lc_response, use_responses_api=use_responses_api
+        )
 
         # Check if it's streaming (AsyncIterator) or non-streaming
         if isinstance(response, AsyncIterator):

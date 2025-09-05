@@ -67,7 +67,11 @@ class LangChainOpenAIRequestAdapter:
         """
         try:
             # Convert Anthropic messages to LangChain format
-            messages = self._convert_to_langchain_messages(anthropic_request)
+            messages = self._convert_to_langchain_messages(
+                anthropic_request,
+                provider_config=provider_config,
+                use_responses_api=use_responses_api,
+            )
 
             logger.debug(
                 "Converted messages to LangChain format",
@@ -147,7 +151,11 @@ class LangChainOpenAIRequestAdapter:
         return langchain_model
 
     def _convert_to_langchain_messages(
-        self, anthropic_request: dict[str, Any]
+        self,
+        anthropic_request: dict[str, Any],
+        *,
+        provider_config: ProviderConfig | None = None,
+        use_responses_api: bool = True,
     ) -> list[BaseMessage]:
         """
         Convert Anthropic Messages API payload into LangChain message objects with a single
@@ -169,11 +177,11 @@ class LangChainOpenAIRequestAdapter:
         system_message = {"role": "system", "content": anthropic_system_content}
 
         anthropic_request_messages: list[dict] = anthropic_request.get("messages", [])
-        N = len(anthropic_request_messages)
+        len_messages = len(anthropic_request_messages)
         last_user_message_index = -1
 
         # Find last real user message (skip tool_result-only entries)
-        for i in range(N - 1, -1, -1):
+        for i in range(len_messages - 1, -1, -1):
             msg = anthropic_request_messages[i]
             content = msg.get("content")
 
@@ -222,18 +230,30 @@ class LangChainOpenAIRequestAdapter:
                     elif btype == "thinking":
                         # we only include relevant reasoning span.
                         # the reasoning items for the tool calls in this turn.
-                        # <remark>
-                        # for openai api, we should rely on `reasoning.id`
-                        # or `previous_response_id` to retain the reasoning context.
-                        # but we are getting requests from anthropic,
-                        # so the reasoning items might not be stored in openai server.
-                        # </remark>
-                        thinking = block.get("thinking", "")
-                        if thinking and msg_i > last_user_message_index:
-                            # currently there is no a good way to include reasoning items for openai-compatible endpoints
-                            thinking = f"<think>{thinking}</think>"
-                            reasoning_content_parts.append(_text_block(thinking))
-                        pass
+                        if msg_i > last_user_message_index:
+                            thinking = block.get("thinking", "")
+                            if (
+                                provider_config is not None
+                                and provider_config.adapter == "openai"
+                                and use_responses_api
+                                and (
+                                    extracted_openai_rs_id := block.get(
+                                        "extracted_openai_rs_id"
+                                    )
+                                )
+                                and isinstance(extracted_openai_rs_id, str)
+                            ):
+                                think_item: dict = {
+                                    "type": "reasoning",
+                                    "id": extracted_openai_rs_id,
+                                }
+                                if thinking:
+                                    think_item["summary"] = [{"text": thinking}]
+                                reasoning_content_parts.append(think_item)
+                            elif thinking:
+                                reasoning_content_parts.append(
+                                    _text_block(f"<think>{thinking}</think>")
+                                )
 
                     elif btype == "tool_use":
                         # Only valid on assistant turns; collect into tool_calls
@@ -392,7 +412,7 @@ class LangChainOpenAIRequestAdapter:
                 # Always include reasoning config, even for minimal effort
                 reasoning_config = {"effort": reasoning_effort}
                 if reasoning_effort != "minimal":
-                    reasoning_config["summary"] = "auto"
+                    reasoning_config["summary"] = "detailed"
                 params["reasoning"] = reasoning_config
             else:
                 params["reasoning_effort"] = reasoning_effort

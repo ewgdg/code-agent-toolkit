@@ -137,7 +137,9 @@ def _function_output_block(call_id: str, output: Any) -> dict[str, Any]:
     }
 
 
-def _content_blocks_from_message(message: AIMessage) -> list[dict[str, Any]]:
+def _content_blocks_from_message(
+    message: AIMessage, use_responses_api: bool
+) -> list[dict[str, Any]]:
     """
     Convert the ``content`` attribute of an AIMessage (or AIMessageChunk)
     into the exact list of Anthropic blocks.
@@ -166,19 +168,30 @@ def _content_blocks_from_message(message: AIMessage) -> list[dict[str, Any]]:
                         url = str(image_url_obj)
                     blocks.append(_image_block(url))
                 elif block_type == "reasoning":
-                    # LangChain OpenAI reasoning format - extract from summary array
-                    summary_data = item.get("summary", [])
-                    if isinstance(summary_data, list):
-                        for summary_item in summary_data:
-                            thinking_text = summary_item.get("text", "")
-                            if thinking_text:
-                                blocks.append(
-                                    {"type": "thinking", "thinking": thinking_text}
-                                )
+                    # LangChain OpenAI reasoning format
+                    # Assume summary is a list; concatenate all text parts into a single string.
+                    item_id = item.get("id") if use_responses_api else None
+                    summary_list = item.get("summary", [])
+                    thinking_text = ""
+                    if isinstance(summary_list, list):
+                        parts: list[str] = []
+                        for summary_item in summary_list:
+                            if isinstance(summary_item, dict):
+                                parts.append(str(summary_item.get("text", "")))
+                            else:
+                                parts.append(str(summary_item))
+                        thinking_text = "".join(parts)
                     else:
-                        blocks.append(
-                            {"type": "thinking", "thinking": str(summary_data)}
-                        )
+                        thinking_text = str(summary_list)
+
+                    if thinking_text or (isinstance(item_id, str) and item_id):
+                        tb: dict[str, Any] = {
+                            "type": "thinking",
+                            "thinking": thinking_text,
+                        }
+                        if isinstance(item_id, str) and item_id:
+                            tb["extracted_openai_rs_id"] = item_id
+                        blocks.append(tb)
                 else:
                     # Unknown dict – fall back to JSON stringified version.
                     blocks.append(_text_block(json.dumps(item, ensure_ascii=False)))
@@ -189,28 +202,18 @@ def _content_blocks_from_message(message: AIMessage) -> list[dict[str, Any]]:
         # Anything else – stringify.
         blocks.append(_text_block(str(raw_content)))
 
-    # ── Extract custom fields from additional_kwargs ──
-    # For Chat Completions API, LangChain ChatOpenAI puts custom fields in additional_kwargs
+    # ── Extract custom fields from additional_kwargs (Chat Completions only) ──
     if message.additional_kwargs:
         log.debug(
             "Found additional_kwargs in message",
             message_type=type(message).__name__,
             kwargs_keys=list(message.additional_kwargs.keys()),
-            kwargs_content=message.additional_kwargs,
-            content_preview=str(raw_content)[:100] if raw_content else None,
         )
-        # Process all configured custom fields
         for key, value in message.additional_kwargs.items():
-            if value:  # Only process non-empty values
+            if value:
                 result = _custom_field_block(key, value)
                 if result:
-                    custom_block, _field_name = result
-                    log.info(
-                        "Found custom field in additional_kwargs",
-                        key=key,
-                        block_type=custom_block["type"],
-                        content_preview=str(value)[:100],
-                    )
+                    custom_block, _ = result
                     blocks.append(custom_block)
 
     return blocks
@@ -308,29 +311,38 @@ class LangChainOpenAIResponseAdapter:
         self,
         raw: BaseMessage | AsyncIterator[BaseMessageChunk],
         headers: Mapping[str, str] | None = None,
+        *,
+        use_responses_api: bool = False,
     ) -> dict[str, Any] | AsyncIterator[str]:
         """
         Dispatch to the correct implementation based on whether ``raw`` is a
         finished message or a streaming iterator.
         """
         if isinstance(raw, BaseMessage):
-            return self._non_stream_response(raw, headers)
+            return self._non_stream_response(raw, headers, use_responses_api)
         else:
-            return self._stream_response(raw, headers)
+            return self._stream_response(raw, headers, use_responses_api)
 
     async def make_response(
         self,
         raw: BaseMessage | AsyncIterator[BaseMessageChunk],
         headers: Mapping[str, str] | None = None,
+        *,
+        use_responses_api: bool = False,
     ) -> dict[str, Any] | AsyncIterator[str]:
         """Thin wrapper kept for API symmetry with the OpenAI‑SDK adapter."""
-        return await self.adapt_response(raw, headers)
+        return await self.adapt_response(
+            raw, headers, use_responses_api=use_responses_api
+        )
 
     # --------------------------------------------------------------------- #
     # Non‑streaming (single message)
     # --------------------------------------------------------------------- #
     def _non_stream_response(
-        self, message: BaseMessage, headers: Mapping[str, str] | None
+        self,
+        message: BaseMessage,
+        headers: Mapping[str, str] | None,
+        use_responses_api: bool,
     ) -> dict[str, Any]:
         if not isinstance(message, AIMessage):
             log.error(
@@ -357,7 +369,7 @@ class LangChainOpenAIResponseAdapter:
                 anthropic_response["request_id"] = low["x-request-id"]
 
         # ── Content (text / image / reasoning) ----------------------------
-        content_blocks = _content_blocks_from_message(message)
+        content_blocks = _content_blocks_from_message(message, use_responses_api)
         anthropic_response["content"].extend(content_blocks)
 
         # ── Tool calls (if any) --------------------------------------------
@@ -439,6 +451,7 @@ class LangChainOpenAIResponseAdapter:
         self,
         chunk_iter: AsyncIterator[BaseMessageChunk],
         headers: Mapping[str, str] | None,
+        use_responses_api: bool,
     ) -> AsyncIterator[str]:
         """
         Convert LangChain streaming chunks to Anthropic streaming format.
@@ -589,6 +602,9 @@ class LangChainOpenAIResponseAdapter:
                                 elif block_type == "reasoning":
                                     # LangChain OpenAI reasoning format - extract from summary array
                                     summary_items = item.get("summary", [])
+                                    item_id = (
+                                        item.get("id") if use_responses_api else None
+                                    )
                                     for summary_item in summary_items:
                                         thinking_text = summary_item.get("text", "")
                                         if thinking_text:
@@ -601,15 +617,21 @@ class LangChainOpenAIResponseAdapter:
                                                     )
                                                     content_block_index += 1
 
-                                                # Start thinking content block
+                                                # Start thinking content block; include rs_* id if present
+                                                start_payload = {"thinking": ""}
+                                                if isinstance(item_id, str) and item_id:
+                                                    start_payload[
+                                                        "extracted_openai_rs_id"
+                                                    ] = item_id
+
                                                 yield self._start_content_block(
                                                     "thinking",
                                                     content_block_index,
-                                                    {"thinking": ""},
+                                                    start_payload,
                                                 )
                                                 current_block_type = "thinking"
 
-                                            # Send thinking delta
+                                            # Send thinking delta for this summary item
                                             yield self._send_thinking_delta(
                                                 content_block_index, thinking_text
                                             )
