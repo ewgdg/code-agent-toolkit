@@ -169,20 +169,31 @@ class LangChainOpenAIRequestAdapter:
         system_message = {"role": "system", "content": anthropic_system_content}
 
         anthropic_request_messages: list[dict] = anthropic_request.get("messages", [])
-        len_messages = len(anthropic_request_messages)
-        last_user_message_index = next(
-            (
-                i
-                for i, msg in enumerate(anthropic_request_messages)
-                if msg.get("role") == "user"
-            ),
-            -1,
-        )
+        N = len(anthropic_request_messages)
+        last_user_message_index = -1
 
-        # offset the index bc of the system message we are going to prepend
-        if last_user_message_index >= 0:
-            last_user_message_index += 1
-        len_messages += 1
+        # Find last real user message (skip tool_result-only entries)
+        for i in range(N - 1, -1, -1):
+            msg = anthropic_request_messages[i]
+            content = msg.get("content")
+
+            if not content:
+                continue
+
+            role = (msg.get("role") or "").lower()
+            if role != "user":
+                continue
+
+            # tool_result can also have a user role, but it is not a user message
+            blocks = content if isinstance(content, list) else [content]
+            if any(
+                isinstance(b, dict) and b.get("type") == "tool_result" for b in blocks
+            ):
+                continue
+
+            # +1 because we will prepend a system message in the chained iterator
+            last_user_message_index = i + 1
+            break
 
         # Conversation messages
         for msg_i, msg in enumerate(
@@ -210,13 +221,13 @@ class LangChainOpenAIRequestAdapter:
 
                     elif btype == "thinking":
                         # we only include relevant reasoning span.
-                        # the reasoning items for the tool calls.
+                        # the reasoning items for the tool calls in this turn.
                         # <remark>
                         # for openai api, there is `reasoning.encrypted_content`
                         # or `previous_response_id` to retain the reasoning context.
                         # </remark>
                         thinking = block.get("thinking", "")
-                        if thinking:
+                        if thinking and msg_i > last_user_message_index:
                             # currently there is not a good way to include reasoning items for openai-compatible endpoints
                             thinking = "\n<think>\n" + thinking + "\n</think>\n"
                             reasoning_content_parts.append(_text_block(thinking))
