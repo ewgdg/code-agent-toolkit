@@ -115,6 +115,10 @@ class TimeoutsConfig(BaseModel):
             raise ValueError("Timeout must be positive")
         return v
 
+    # Make instances immutable/hashable so they can participate in hashing
+    # of parent frozen models (e.g., ProviderConfig).
+    model_config = ConfigDict(frozen=True)
+
 
 class LoggingConfig(BaseModel):
     level: str = Field(default="info")
@@ -148,6 +152,10 @@ class ProviderConfig(BaseModel):
         if v not in valid_adapters:
             raise ValueError(f"adapter must be one of: {', '.join(valid_adapters)}")
         return v
+
+    # Freeze the model so it can be safely used as a dict key for caches.
+    # See Pydantic v2 docs on `frozen=True` for immutability and hash generation.
+    model_config = ConfigDict(frozen=True)
 
 
 class WhenCondition(BaseModel):

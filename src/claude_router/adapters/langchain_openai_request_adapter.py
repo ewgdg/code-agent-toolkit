@@ -41,7 +41,10 @@ class LangChainOpenAIRequestAdapter:
     def __init__(self, config: Config, router: ModelRouter):
         self.config = config
         self.router = router
-        self._model_cache: dict[str, RunnableSerializable[Any, BaseMessage]] = {}
+        # Cache LangChain model instances by (ProviderConfig, model_name)
+        self._model_cache: dict[
+            tuple[ProviderConfig, str], RunnableSerializable[Any, BaseMessage]
+        ] = {}
 
     async def adapt_request(
         self,
@@ -119,7 +122,9 @@ class LangChainOpenAIRequestAdapter:
         model: str,
     ) -> RunnableSerializable[Any, BaseMessage]:
         """Create or retrieve cached LangChain model instance."""
-        cache_key = f"{provider_config.base_url}:{model}"
+        # Use the frozen ProviderConfig plus model name to avoid collisions
+        # when multiple providers share the same base_url with different settings.
+        cache_key = (provider_config, model)
 
         if cache_key in self._model_cache:
             return self._model_cache[cache_key]
