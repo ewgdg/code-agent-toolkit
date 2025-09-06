@@ -1,5 +1,3 @@
-import asyncio
-
 from langchain_core.messages import AIMessage
 
 from src.claude_router.adapters.langchain_openai_response_adapter import (
@@ -29,6 +27,10 @@ def test_non_stream_response_does_not_invent_reasoning_id():
     assert result["type"] == "message"
 
     # ensure thinking block is present but WITHOUT id (since we didn't surface rs_*)
-    think_blocks = [b for b in result["content"] if isinstance(b, dict) and b.get("type") == "thinking"]
+    think_blocks = [
+        b
+        for b in result["content"]
+        if isinstance(b, dict) and b.get("type") == "thinking"
+    ]
     assert think_blocks, "expected a thinking block in content"
     assert all("id" not in b for b in think_blocks)

@@ -171,6 +171,12 @@ def _content_blocks_from_message(
                     # LangChain OpenAI reasoning format
                     # Assume summary is a list; concatenate all text parts into a single string.
                     item_id = item.get("id") if use_responses_api else None
+                    # When using Responses API, the reasoning item may carry
+                    # an opaque encrypted payload we should surface for
+                    # round‑tripping on subsequent requests.
+                    encrypted_content = (
+                        item.get("encrypted_content") if use_responses_api else None
+                    )
                     summary_list = item.get("summary", [])
                     thinking_text = ""
                     if isinstance(summary_list, list):
@@ -184,14 +190,33 @@ def _content_blocks_from_message(
                     else:
                         thinking_text = str(summary_list)
 
-                    if thinking_text or (isinstance(item_id, str) and item_id):
+                    if thinking_text or item_id or encrypted_content:
                         tb: dict[str, Any] = {
                             "type": "thinking",
                             "thinking": thinking_text,
                         }
                         if isinstance(item_id, str) and item_id:
                             tb["extracted_openai_rs_id"] = item_id
+                        if encrypted_content:
+                            tb["extracted_openai_rs_encrypted_content"] = (
+                                encrypted_content
+                            )
                         blocks.append(tb)
+
+                        # Info log for OpenAI reasoning summary (non-stream)
+                        try:
+                            preview = thinking_text[:200] if thinking_text else ""
+                            log.debug(
+                                "OpenAI reasoning summary extracted",
+                                mode="non_stream",
+                                preview=preview,
+                                length=len(thinking_text),
+                                item_id=item_id,
+                                has_encrypted=bool(encrypted_content),
+                            )
+                        except Exception:
+                            # Never fail the request because of logging
+                            pass
                 else:
                     # Unknown dict – fall back to JSON stringified version.
                     blocks.append(_text_block(json.dumps(item, ensure_ascii=False)))
@@ -346,14 +371,14 @@ class LangChainOpenAIResponseAdapter:
     ) -> dict[str, Any]:
         if not isinstance(message, AIMessage):
             log.error(
-                "Non‑AIMessage supplied to finished response builder",
+                "Non-AIMessage supplied to finished response builder",
                 type=type(message),
             )
             raise TypeError("Finished response must be an AIMessage")
 
         # Build Anthropic-style response (matching ResponsesResponseAdapter)
         anthropic_response: dict[str, Any] = {
-            "id": f"msg_{uuid.uuid4().hex}",
+            "id": message.id or f"msg_{uuid.uuid4().hex}",
             "type": "message",
             "role": "assistant",
             "model": self._extract_model_name(message),
@@ -424,10 +449,7 @@ class LangChainOpenAIResponseAdapter:
         thinking_delta = {
             "type": "content_block_delta",
             "index": index,
-            "delta": {
-                "type": "thinking_delta",
-                "thinking": thinking,
-            },
+            "delta": {"type": "thinking_delta", "thinking": thinking},
         }
         event_data = json.dumps(thinking_delta)
         return f"event: content_block_delta\ndata: {event_data}\n\n"
@@ -497,7 +519,7 @@ class LangChainOpenAIResponseAdapter:
                 # Send message start event if not already sent
                 if not message_started:
                     message_obj: dict[str, Any] = {
-                        "id": f"msg_{uuid.uuid4().hex}",
+                        "id": accumulated_message.id or f"msg_{uuid.uuid4().hex}",
                         "type": "message",
                         "role": "assistant",
                         "model": self._extract_model_name(chunk),
@@ -602,38 +624,61 @@ class LangChainOpenAIResponseAdapter:
                                 elif block_type == "reasoning":
                                     # LangChain OpenAI reasoning format - extract from summary array
                                     summary_items = item.get("summary", [])
-                                    item_id = (
+                                    reasoning_id = (
                                         item.get("id") if use_responses_api else None
                                     )
+                                    encrypted_content = (
+                                        item.get("encrypted_content")
+                                        if use_responses_api
+                                        else None
+                                    )
+                                    thinking_parts = []
                                     for summary_item in summary_items:
-                                        thinking_text = summary_item.get("text", "")
-                                        if thinking_text:
-                                            # Start thinking content block if not already started
-                                            if current_block_type != "thinking":
-                                                # Close current block if it was open
-                                                if current_block_type is not None:
-                                                    yield self._stop_content_block(
-                                                        content_block_index
-                                                    )
-                                                    content_block_index += 1
+                                        summary_item_text = summary_item.get("text", "")
+                                        if summary_item_text:
+                                            thinking_parts.append(summary_item_text)
 
-                                                # Start thinking content block; include rs_* id if present
-                                                start_payload = {"thinking": ""}
-                                                if isinstance(item_id, str) and item_id:
-                                                    start_payload[
-                                                        "extracted_openai_rs_id"
-                                                    ] = item_id
-
-                                                yield self._start_content_block(
-                                                    "thinking",
-                                                    content_block_index,
-                                                    start_payload,
+                                    thinking_text = "".join(thinking_parts)
+                                    if (
+                                        thinking_text
+                                        or reasoning_id
+                                        or encrypted_content
+                                    ):
+                                        # Start thinking content block if not already started
+                                        if current_block_type != "thinking":
+                                            # Close current block if it was open
+                                            if current_block_type is not None:
+                                                yield self._stop_content_block(
+                                                    content_block_index
                                                 )
-                                                current_block_type = "thinking"
+                                                content_block_index += 1
 
-                                            # Send thinking delta for this summary item
+                                            # Start thinking content block; include rs_* id and encrypted payload if present
+                                            start_payload = {"thinking": ""}
+
+                                            if reasoning_id:
+                                                start_payload[
+                                                    "extracted_openai_rs_id"
+                                                ] = reasoning_id
+
+                                            # we can only put custom fields in the start chunk
+                                            # the reconciler will discard them from delta chunks
+                                            if encrypted_content:
+                                                start_payload[
+                                                    "extracted_openai_rs_encrypted_content"
+                                                ] = encrypted_content
+
+                                            yield self._start_content_block(
+                                                "thinking",
+                                                content_block_index,
+                                                start_payload,
+                                            )
+                                            current_block_type = "thinking"
+
+                                        if thinking_text:
                                             yield self._send_thinking_delta(
-                                                content_block_index, thinking_text
+                                                content_block_index,
+                                                thinking_text,
                                             )
 
                             elif isinstance(item, str) and item:
@@ -661,7 +706,7 @@ class LangChainOpenAIResponseAdapter:
 
                         # Build tool call map: store name/id from first chunk with these values
                         tool_name = tool_chunk.get("name")
-                        call_id = tool_chunk.get("id")
+                        call_id = tool_chunk.get("call_id") or tool_chunk.get("id")
                         if tool_name and call_id:
                             tool_call_map[chunk_index] = {
                                 "name": tool_name,
@@ -757,25 +802,9 @@ class LangChainOpenAIResponseAdapter:
 
             # Debug log accumulated additional_kwargs after stream is complete
             if accumulated_message.additional_kwargs:
-                # Process custom fields for logging
-                custom_fields_summary = {}
-                for key, value in accumulated_message.additional_kwargs.items():
-                    if key in CUSTOM_FIELD_MAPPING:
-                        cfg = CUSTOM_FIELD_MAPPING.get(key) or {}
-                        block_type = (
-                            cfg.get("block_type") if isinstance(cfg, dict) else None
-                        ) or "unknown"
-                        custom_fields_summary[key] = {
-                            "block_type": block_type,
-                            "content_preview": str(value)[:100] if value else "",
-                            "content_length": len(str(value)) if value else 0,
-                        }
-
                 log.debug(
                     "Custom fields processed in accumulated message",
                     kwargs_keys=list(accumulated_message.additional_kwargs.keys()),
-                    custom_fields_summary=custom_fields_summary,
-                    total_custom_fields=len(custom_fields_summary),
                 )
 
             if accumulated_message.tool_calls:

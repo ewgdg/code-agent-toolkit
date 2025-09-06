@@ -20,7 +20,8 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
-from langchain_core.runnables import ConfigurableField, Runnable, RunnableSerializable
+from langchain_core.runnables import Runnable, RunnableSerializable
+from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from ..config import Config, ProviderConfig
@@ -69,7 +70,6 @@ class LangChainOpenAIRequestAdapter:
             # Convert Anthropic messages to LangChain format
             messages = self._convert_to_langchain_messages(
                 anthropic_request,
-                provider_config=provider_config,
                 use_responses_api=use_responses_api,
             )
 
@@ -133,19 +133,31 @@ class LangChainOpenAIRequestAdapter:
         timeouts = provider_config.timeouts_ms or self.config.timeouts_ms
         timeout_seconds = timeouts.read / 1000
 
-        # Create LangChain OpenAI model with custom field extraction
-        # ChatOpenAIWithCustomFields expects pydantic.SecretStr for api_key; wrap string if present
-        langchain_model = ChatOpenAIWithCustomFields(
-            model=model,
-            api_key=SecretStr(api_key) if api_key is not None else None,
-            base_url=provider_config.base_url,
-            timeout=timeout_seconds,
-            stream_usage=True,
-            use_responses_api=True,
-            output_version="responses/v1",
-        ).configurable_fields(
-            use_responses_api=ConfigurableField(id="use_responses_api")
-        )
+        if provider_config.adapter == "openai":
+            langchain_model = ChatOpenAI(
+                model=model,
+                api_key=SecretStr(api_key) if api_key is not None else None,
+                base_url=provider_config.base_url,
+                timeout=timeout_seconds,
+                stream_usage=True,
+                use_responses_api=True,
+                output_version="responses/v1",
+                # Ask the Responses API to include encrypted reasoning and
+                # disable server-side storage
+                store=False,
+                include=["reasoning.encrypted_content"],
+            )
+        else:
+            # Create LangChain OpenAI model with custom field extraction
+            # for openai-compatible providers
+            langchain_model = ChatOpenAIWithCustomFields(
+                model=model,
+                api_key=SecretStr(api_key) if api_key is not None else None,
+                base_url=provider_config.base_url,
+                timeout=timeout_seconds,
+                stream_usage=True,
+                use_responses_api=False,
+            )
 
         self._model_cache[cache_key] = langchain_model
         return langchain_model
@@ -154,7 +166,6 @@ class LangChainOpenAIRequestAdapter:
         self,
         anthropic_request: dict[str, Any],
         *,
-        provider_config: ProviderConfig | None = None,
         use_responses_api: bool = True,
     ) -> list[BaseMessage]:
         """
@@ -209,6 +220,7 @@ class LangChainOpenAIRequestAdapter:
         ):
             role = (msg.get("role") or "").lower()
             content = msg.get("content")
+            msg_id = msg.get("id")
 
             if not content:
                 continue
@@ -233,22 +245,28 @@ class LangChainOpenAIRequestAdapter:
                         if msg_i > last_user_message_index:
                             thinking = block.get("thinking", "")
                             if (
-                                provider_config is not None
-                                and provider_config.adapter == "openai"
-                                and use_responses_api
+                                use_responses_api
+                                and (
+                                    extracted_openai_rs_encrypted := block.get(
+                                        "extracted_openai_rs_encrypted_content"
+                                    )
+                                )
                                 and (
                                     extracted_openai_rs_id := block.get(
                                         "extracted_openai_rs_id"
                                     )
                                 )
-                                and isinstance(extracted_openai_rs_id, str)
                             ):
-                                think_item: dict = {
-                                    "type": "reasoning",
-                                    "id": extracted_openai_rs_id,
-                                }
+                                think_item: dict = {"type": "reasoning"}
+                                think_item["encrypted_content"] = (
+                                    extracted_openai_rs_encrypted
+                                )
+                                think_item["id"] = extracted_openai_rs_id
+
                                 if thinking:
                                     think_item["summary"] = [{"text": thinking}]
+                                else:
+                                    think_item["summary"] = []
                                 reasoning_content_parts.append(think_item)
                             elif thinking:
                                 reasoning_content_parts.append(
@@ -318,11 +336,21 @@ class LangChainOpenAIRequestAdapter:
 
             if role == "system":
                 if content_parts:
-                    messages.append(SystemMessage(content=content_parts))
+                    messages.append(
+                        SystemMessage(
+                            content=content_parts,
+                            id=msg_id,
+                        )
+                    )
 
             elif role == "user":
                 if content_parts:
-                    messages.append(HumanMessage(content=content_parts))
+                    messages.append(
+                        HumanMessage(
+                            content=content_parts,
+                            id=msg_id,
+                        )
+                    )
 
             elif role == "assistant":
                 # Emit AIMessage even if only tool_calls exist (content can be empty string)
@@ -335,12 +363,18 @@ class LangChainOpenAIRequestAdapter:
                         AIMessage(
                             content=content_parts if content_parts else "",
                             tool_calls=[] if tool_calls is None else tool_calls,
+                            id=msg_id,
                         )
                     )
             else:
                 # Unknown role: default to HumanMessage with provided content parts
                 if content_parts:
-                    messages.append(HumanMessage(content=content_parts))
+                    messages.append(
+                        HumanMessage(
+                            content=content_parts,
+                            id=msg_id,
+                        )
+                    )
 
         return messages
 
@@ -399,7 +433,7 @@ class LangChainOpenAIRequestAdapter:
 
         # Add reasoning effort for supported models (OpenAI o1-style reasoning)
         if support_reasoning or self.config.openai.supports_reasoning(model):
-            del params["max_tokens"]
+            params.pop("max_tokens", None)
             reasoning_effort = self.config.openai.get_reasoning_effort(
                 anthropic_request
             )
@@ -412,7 +446,7 @@ class LangChainOpenAIRequestAdapter:
                 # Always include reasoning config, even for minimal effort
                 reasoning_config = {"effort": reasoning_effort}
                 if reasoning_effort != "minimal":
-                    reasoning_config["summary"] = "detailed"
+                    reasoning_config["summary"] = "auto"
                 params["reasoning"] = reasoning_config
             else:
                 params["reasoning_effort"] = reasoning_effort
@@ -492,11 +526,6 @@ class LangChainOpenAIRequestAdapter:
 
             # Build/lookup LC model and apply params + tools
             lc_model = self._get_langchain_model(provider_config, target_model)
-
-            # Bind any model call parameters (temperature, max_tokens, etc)
-            lc_model = lc_model.with_config(
-                config={"configurable": {"use_responses_api": use_responses_api}},
-            )
 
             if params:
                 lc_model = lc_model.bind(**params)

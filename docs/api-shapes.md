@@ -28,11 +28,11 @@ OpenAI Responses API (core)
   - `usage: { input_tokens, output_tokens, output_tokens_details: { reasoning_tokens }, total_tokens }`
 - Reasoning item (output):
   - Item type: `ReasoningItem` → commonly exposed with structure like:
-    - `{ type: "reasoning", id: "rs_...", summary: [ { type: "output_text", text: <string> }, ... ] }`
+    - `{ type: "reasoning", id: "rs_...", summary: [ { type: "output_text", text: <string> }, ... ], encrypted_content?: <opaque-string> }`
 - Reasoning item (input):
-  - You can reference prior reasoning via an input item. Two patterns are seen:
-    1) `{ type: "reasoning", id: "rs_..." }` (place before items that depend on that reasoning; some flows require this to precede tool/function items), and/or
-    2) `{ type: "item_reference", id: "rs_..." }` (generic cross‑item reference).
+  - You can carry forward prior reasoning via an input item. Preferred and fallback patterns:
+    1) Preferred: `{ type: "reasoning", encrypted_content: <opaque-string> }`
+    2) Fallback: `{ type: "reasoning", id: "rs_..." }`
   - These patterns are only valid for models that support reasoning and are sensitive to item ordering; malformed orders produce 400 errors.
 
 LangChain ChatOpenAI (Responses mode)
