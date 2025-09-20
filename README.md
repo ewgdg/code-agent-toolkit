@@ -7,6 +7,18 @@ Intelligent proxy that routes Claude Code CLI traffic between Anthropic and Open
 - Smart routing based on configurable rules (plan mode, model patterns, etc.)
 - Seamless API translation between Anthropic Messages and OpenAI Chat Completions
 - Hot configuration reload and streaming support
+- **Optimized for reasoning models** with automatic Responses API usage and reasoning workflow support
+
+## Reasoning Model Optimization
+
+This router is specifically optimized for OpenAI's reasoning models (o1, o3, etc.) and follows the best practices from the [OpenAI Cookbook](https://cookbook.openai.com/examples/responses_api/reasoning_items?utm_source=openai):
+
+- **Responses API Integration**: Automatically uses OpenAI's Responses API for official OpenAI reasoning models to capture reasoning traces
+- **Reasoning Workflow Support**: For third-party APIs that only support Chat Completions endpoints, the router feeds reasoning items through the standard chat interface. Following the cookbook pattern, only reasoning items from the final round of tool calling are included as assistant messages, ensuring efficient reasoning trace integration without overwhelming the context window
+- **Automatic Reasoning Conversion**: Converts Claude Code requests to reasoning-optimized formats with configurable effort levels and summary inclusion
+- **Effort Level Mapping**: Intelligently maps token budgets and request complexity to appropriate reasoning effort levels (low, medium, high)
+
+The router seamlessly handles both official OpenAI APIs (with full Responses API support) and third-party reasoning-compatible models through unified reasoning workflows.
 
 ## Quick Start
 
