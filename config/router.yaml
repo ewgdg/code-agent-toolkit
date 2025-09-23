@@ -86,9 +86,8 @@ overrides:
     provider: "openai"
     config:
       reasoning:
-        effort: 
+        effort:
           value: "high"
-          priority: "always"
         summary: "auto"
   
   # Route gpt requests to OpenAI
