@@ -8,7 +8,7 @@ from typing import Any
 
 import structlog
 from fastapi import HTTPException, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from ..config import Config
 from ..router import ModelRouter, RouterDecision
@@ -86,9 +86,14 @@ class UnifiedLangChainAdapter(UnifiedRequestAdapter):
             )
         else:
             # Non-streaming response
-            return Response(
+            if isinstance(response, (str, bytes)):
+                return Response(
+                    content=response,
+                    media_type="application/json",
+                    headers={"x-request-id": request_id},
+                )
+            return JSONResponse(
                 content=response,
-                media_type="application/json",
                 headers={"x-request-id": request_id},
             )
 
