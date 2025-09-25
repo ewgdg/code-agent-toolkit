@@ -217,6 +217,13 @@ def _content_blocks_from_message(
                         except Exception:
                             # Never fail the request because of logging
                             pass
+                elif block_type == "web_search_call":
+                    blocks.append(
+                        {
+                            "type": "thinking",
+                            "thinking": "web_search has been performed.",
+                        }
+                    )
                 else:
                     # Unknown dict – fall back to JSON stringified version.
                     blocks.append(_text_block(json.dumps(item, ensure_ascii=False)))
@@ -597,6 +604,98 @@ class LangChainOpenAIResponseAdapter:
                         for item in chunk.content:
                             if isinstance(item, dict):
                                 block_type = item.get("type")
+                                if block_type == "web_search_call":
+                                    call_id = item.get("id") or item.get("call_id")
+                                    if not call_id:
+                                        log.warning(
+                                            "web_search_call block missing id",
+                                            item=item,
+                                        )
+                                        continue
+
+                                    call_id = str(call_id)
+
+                                    if (
+                                        current_block_type != "web_search_call"
+                                        or current_tool_call_id != call_id
+                                    ):
+                                        if current_block_type is not None:
+                                            yield self._stop_content_block(
+                                                content_block_index
+                                            )
+                                            content_block_index += 1
+                                            current_block_type = None
+
+                                        current_tool_call_id = call_id
+
+                                        current_block_type = "web_search_call"
+                                        start_payload = {"thinking": ""}
+                                        yield self._start_content_block(
+                                            "thinking",
+                                            content_block_index,
+                                            start_payload,
+                                        )
+
+                                        # yield self._start_content_block(
+                                        #     "server_tool_use",
+                                        #     content_block_index,
+                                        #     {
+                                        #         "id": call_id,
+                                        #         "name": "web_search",
+                                        #         "input": {"query": ""},
+                                        #     },
+                                        # )
+
+                                    status_messages = ["invoking web_search"]
+
+                                    action = item.get("action")
+                                    action_dict = (
+                                        action if isinstance(action, dict) else {}
+                                    )
+
+                                    action_type = action_dict.get("type")
+                                    # if action_type not in {
+                                    #     "search",
+                                    #     "open_page",
+                                    #     "find",
+                                    # }:
+                                    #     continue
+
+                                    action_message = ""
+                                    if action_type:
+                                        query: str | None = action_dict.get("query")
+                                        url: str | None = action_dict.get("url")
+                                        pattern: str | None = action_dict.get("pattern")
+                                        action_message = f"action: {action_type}"
+
+                                        if query:
+                                            action_message += f", query: {query}"
+                                        if pattern:
+                                            action_message += f", pattern: {pattern}"
+                                        if url:
+                                            action_message += f", url: {url}"
+
+                                    if action_message:
+                                        status_messages.append(action_message)
+
+                                    status = item.get("status")
+
+                                    if status == "completed":
+                                        status_messages.append("web_search completed")
+
+                                    if status_messages:
+                                        thinking_update = "\n".join(status_messages)
+                                        yield self._send_thinking_delta(
+                                            content_block_index, thinking_update
+                                        )
+
+                                    if status == "completed":
+                                        yield self._stop_content_block(
+                                            content_block_index
+                                        )
+                                        content_block_index += 1
+                                        current_block_type = None
+
                                 if block_type == "text":
                                     text_content = item.get("text", "")
                                     if text_content:
@@ -620,6 +719,8 @@ class LangChainOpenAIResponseAdapter:
                                         yield self._send_text_delta(
                                             content_block_index, text_content
                                         )
+
+                                        # Ignore annotations;
 
                                 elif block_type == "reasoning":
                                     # LangChain OpenAI reasoning format - extract from summary array
