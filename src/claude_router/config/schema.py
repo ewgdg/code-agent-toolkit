@@ -131,6 +131,16 @@ class LoggingConfig(BaseModel):
         return v.lower()
 
 
+class ToolPolicyConfig(BaseModel):
+    """Policies controlling which tools may be forwarded downstream."""
+
+    # Tool names are matched case-insensitively
+    restricted_tool_names: list[str] = Field(
+        default=["web_search", "web_fetch"],
+        description=("Tool names to filter unless predicates pass; case-insensitive."),
+    )
+
+
 class ProviderConfig(BaseModel):
     base_url: str = Field(description="Base URL for the provider API")
     adapter: str = Field(description="Adapter type: anthropic-passthrough, openai")
@@ -139,6 +149,9 @@ class ProviderConfig(BaseModel):
     )
     timeouts_ms: TimeoutsConfig | None = Field(
         default=None, description="Provider-specific timeouts"
+    )
+    tools: ToolPolicyConfig | None = Field(
+        default=None, description="Per-provider tool policy override"
     )
 
     @field_validator("adapter")
@@ -220,6 +233,7 @@ class Config(BaseModel):
     openai: OpenAIConfig = Field(default_factory=OpenAIConfig)
     timeouts_ms: TimeoutsConfig = Field(default_factory=TimeoutsConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    tools: ToolPolicyConfig = Field(default_factory=ToolPolicyConfig)
     overrides: list[OverrideRule] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")  # Prevent unknown fields
