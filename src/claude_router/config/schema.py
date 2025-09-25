@@ -135,10 +135,24 @@ class ToolPolicyConfig(BaseModel):
     """Policies controlling which tools may be forwarded downstream."""
 
     # Tool names are matched case-insensitively
-    restricted_tool_names: list[str] = Field(
-        default=["web_search", "web_fetch"],
-        description=("Tool names to filter unless predicates pass; case-insensitive."),
+    restricted_tool_names: tuple[str, ...] = Field(
+        default=("web_search", "web_fetch"),
+        description=(
+            "Tool names to filter unless predicates pass; case-insensitive."
+        ),
     )
+
+    @field_validator("restricted_tool_names", mode="before")
+    @classmethod
+    def ensure_tuple(cls, value: Any) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if isinstance(value, (list, tuple)):
+            return tuple(value)
+        raise TypeError("restricted_tool_names must be a sequence of strings")
+
+    # Freeze config so it can participate in ProviderConfig hashing
+    model_config = ConfigDict(frozen=True)
 
 
 class ProviderConfig(BaseModel):
