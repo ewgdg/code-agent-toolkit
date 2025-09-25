@@ -27,6 +27,7 @@ providers:
 
 - Requests handled by `UnifiedLangChainAdapter` call `filter_tools_in_request(...)` before adapting or invoking the model.
 - Any tool whose `name` matches (case-insensitive) an entry in `restricted_tool_names` is removed from the request prior to contacting the downstream provider.
+- The official OpenAI adapter automatically appends the platform's built-in `web_search` tool when sending Requests API payloads. This ensures the model can launch first-party search even if user-supplied tool lists excluded it upstream.
 
 ## Testing
 

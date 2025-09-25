@@ -421,7 +421,15 @@ class LangChainOpenAIRequestAdapter:
         """Prepare a unified LangChain-executable payload for OpenAI models."""
         # Tools to be bound via LangChain
         tools = anthropic_request.get("tools") or []
-        lc_tools = self._convert_tools(tools) if tools else []
+        lc_tools: list[dict[str, Any]] = (
+            self._convert_tools(tools) if tools else []
+        )
+
+        if self._should_append_builtin_web_search(
+            provider_config, use_responses_api
+        ):
+            if not any(self._is_builtin_web_search_tool(tool) for tool in lc_tools):
+                lc_tools.append({"type": "web_search"})
 
         # Collect model call parameters to bind on the LC model
         params: dict[str, Any] = {}
@@ -505,6 +513,25 @@ class LangChainOpenAIRequestAdapter:
             openai_tools.append(openai_tool)
 
         return openai_tools
+
+    @staticmethod
+    def _is_builtin_web_search_tool(tool: dict[str, Any]) -> bool:
+        return isinstance(tool, dict) and tool.get("type") == "web_search"
+
+    def _should_append_builtin_web_search(
+        self,
+        provider_config: ProviderConfig | None,
+        use_responses_api: bool,
+    ) -> bool:
+        """Return True when the OpenAI adapter should include the built-in web search tool."""
+
+        if not use_responses_api:
+            return False
+
+        if not provider_config:
+            return False
+
+        return provider_config.adapter == "openai"
 
     def _clean_parameters_schema(self, schema: dict[str, Any]) -> dict[str, Any]:
         schema["properties"] = schema.get("properties", {})
