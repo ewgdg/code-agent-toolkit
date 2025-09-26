@@ -12,6 +12,8 @@ from .adapters import (
     PassthroughAdapter,
     UnifiedLangChainAdapter,
 )
+from .adapters.prompt_filter import filter_system_prompt_in_request
+from .adapters.tool_filter import filter_tools_in_request
 from .config import ConfigLoader
 from .router import ModelRouter
 
@@ -162,6 +164,31 @@ class ProxyRouter:
                 reason=decision.reason,
                 model_config=decision.model_config,
             )
+
+            # Apply request-level filters before dispatching to adapters
+            try:
+                # 1) System prompt clause filters (global config)
+                if isinstance(request_data, dict) and request_data:
+                    filter_system_prompt_in_request(
+                        request_data, self.config.system_prompt_filters
+                    )
+
+                # 2) Tool filtering (provider override falls back to global policy)
+                provider_config = self.config.providers.get(decision.provider)
+                if provider_config and isinstance(request_data, dict) and request_data:
+                    policy = provider_config.tools or self.config.tools
+                    request_data = filter_tools_in_request(request_data, policy)
+
+                # If we modified JSON for passthrough flows, re-encode the body
+                if (
+                    body
+                    and method in ["POST", "PUT", "PATCH"]
+                    and isinstance(request_data, dict)
+                    and decision.adapter == "anthropic-passthrough"
+                ):
+                    body = json.dumps(request_data).encode()
+            except Exception as e:
+                self._handle_adapter_error(e, headers.get("x-request-id", ""), "filtering")
 
             # Route request based on adapter type
             try:

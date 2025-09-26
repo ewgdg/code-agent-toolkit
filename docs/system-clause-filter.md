@@ -31,12 +31,8 @@ message entirely. Regex filters use `re.IGNORECASE` unless `case_sensitive` is s
 ## Runtime Behavior
 
 - Filters apply only to the top-level `system` field in Anthropic-style requests.
-- Text content inside list blocks is filtered safely without mutating the original
-  payload.
-- Filtering happens centrally inside `UnifiedLangChainAdapter` via
-  `prompt_filter.filter_system_prompt_in_request`, so every downstream adapter receives
-  the sanitized prompt.
-- Clause removal is conservative: the helper leaves surrounding whitespace untouched so
-  callers can decide how to format the remaining text.
+- Text content inside list blocks is filtered safely without mutating the original payload.
+- Filtering now occurs in `server.py` before routing, ensuring both passthrough and LangChain/OpenAI paths receive sanitized input.
+- Clause removal is conservative: the helper leaves surrounding whitespace untouched so callers can decide how to format the remaining text.
 
 See `tests/test_system_clause_filter.py` for usage examples.

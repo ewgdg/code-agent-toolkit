@@ -25,7 +25,7 @@ providers:
 
 ## How It Works
 
-- Requests handled by `UnifiedLangChainAdapter` call `filter_tools_in_request(...)` before adapting or invoking the model.
+- The server applies tool filtering in `server.py` before routing to adapters. It uses the per-provider override (`ProviderConfig.tools`) when present, otherwise the global `Config.tools`.
 - Any tool whose `name` matches (case-insensitive) an entry in `restricted_tool_names` is removed from the request prior to contacting the downstream provider.
 - The official OpenAI adapter automatically appends the platform's built-in `web_search` tool when sending Requests API payloads. This ensures the model can launch first-party search even if user-supplied tool lists excluded it upstream.
 
