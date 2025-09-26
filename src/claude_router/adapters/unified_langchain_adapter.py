@@ -15,6 +15,7 @@ from ..router import ModelRouter, RouterDecision
 from .base import UnifiedRequestAdapter
 from .langchain_openai_request_adapter import LangChainOpenAIRequestAdapter
 from .langchain_openai_response_adapter import LangChainOpenAIResponseAdapter
+from .prompt_filter import filter_system_prompt_in_request
 from .tool_filter import filter_tools_in_request
 
 logger = structlog.get_logger(__name__)
@@ -49,6 +50,11 @@ class UnifiedLangChainAdapter(UnifiedRequestAdapter):
         # True for "openai" adapter (official OpenAI API with Responses API support)
         # False for "openai-compatible" adapter (third-party APIs)
         use_responses_api = provider_config.adapter == "openai"
+
+        # Sanitize system prompt before sending to downstream adapters
+        filter_system_prompt_in_request(
+            request_data, self.config.system_prompt_filters
+        )
 
         # Filter restricted tools with provider override fallback to global policy
         policy = provider_config.tools or self.config.tools

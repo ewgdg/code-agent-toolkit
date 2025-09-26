@@ -35,6 +35,14 @@ openai:
     - "gpt-5"
     - "gpt-oss"
 
+# System prompt filtering
+system_prompt_filters:
+  clause_filters:
+    - pattern: '[,;]?\s*[^.;,]*\bdefensive security\b[^.;,]*'
+      is_regex: true
+    - pattern: '[,;]?\s*[^.;,]*\brefuse to\b[^.;,]*'
+      is_regex: true
+
 # Timeout configuration
 timeouts_ms:
   connect: 10000    # 10 seconds

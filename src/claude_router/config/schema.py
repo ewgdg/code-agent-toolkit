@@ -1,8 +1,49 @@
 import re
+from functools import cached_property
 from re import Pattern
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class ClauseFilterRule(BaseModel):
+    """Represents a clause filter rule for system prompts."""
+
+    pattern: str = Field(
+        description="Pattern or literal text to remove from the system message"
+    )
+    is_regex: bool = Field(
+        default=False,
+        description="Treat pattern as regular expression when true; otherwise use literal removal.",
+    )
+    case_sensitive: bool = Field(
+        default=False, description="Perform case-sensitive matching when true"
+    )
+
+    @field_validator("pattern")
+    @classmethod
+    def validate_pattern(cls, value: str) -> str:
+        if not value:
+            raise ValueError("pattern must be a non-empty string")
+        return value
+
+    @cached_property
+    def compiled_pattern(self) -> Pattern[str] | None:
+        if not self.is_regex and self.case_sensitive:
+            return None
+        flags = 0 if self.case_sensitive else re.IGNORECASE
+        return re.compile(self.pattern, flags=flags)
+
+
+class SystemPromptFilterConfig(BaseModel):
+    """Configuration for system prompt clause filtering."""
+
+    clause_filters: tuple[ClauseFilterRule, ...] = Field(
+        default=(),
+        description="Ordered clause filters applied to the top-level system prompt",
+    )
+
+    model_config = ConfigDict(frozen=True)
 
 
 class RouterConfig(BaseModel):
@@ -248,6 +289,10 @@ class Config(BaseModel):
     timeouts_ms: TimeoutsConfig = Field(default_factory=TimeoutsConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     tools: ToolPolicyConfig = Field(default_factory=ToolPolicyConfig)
+    system_prompt_filters: SystemPromptFilterConfig = Field(
+        default_factory=SystemPromptFilterConfig,
+        description="System prompt clause filtering configuration",
+    )
     overrides: list[OverrideRule] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")  # Prevent unknown fields

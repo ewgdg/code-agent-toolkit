@@ -103,6 +103,7 @@ class LangChainOpenAIRequestAdapter:
                 support_reasoning=support_reasoning
                 or self.config.openai.supports_reasoning(model),
                 stream=anthropic_request.get("stream", False),
+                message_preview=(messages[-1].text()[:100] if messages else "N/A"),
             )
 
             return adapted_request
@@ -190,11 +191,17 @@ class LangChainOpenAIRequestAdapter:
 
         # Handle top‑level system prompt if provided
         anthropic_system_content = anthropic_request.get("system")
-        system_message = {"role": "system", "content": anthropic_system_content}
+        include_system_message = self._system_content_has_text(anthropic_system_content)
+        system_message = (
+            {"role": "system", "content": anthropic_system_content}
+            if include_system_message
+            else None
+        )
 
         anthropic_request_messages: list[dict] = anthropic_request.get("messages", [])
         len_messages = len(anthropic_request_messages)
         last_user_message_index = -1
+        system_offset = 1 if include_system_message else 0
 
         # Find last real user message (skip tool_result-only entries)
         for i in range(len_messages - 1, -1, -1):
@@ -215,14 +222,19 @@ class LangChainOpenAIRequestAdapter:
             ):
                 continue
 
-            # +1 because we will prepend a system message in the chained iterator
-            last_user_message_index = i + 1
+            # Offset because we may have prepended a system message
+            last_user_message_index = i + system_offset
             break
 
         # Conversation messages
-        for msg_i, msg in enumerate(
-            itertools.chain((system_message,), anthropic_request_messages)
-        ):
+        if system_message is not None:
+            chained_messages = itertools.chain(
+                (system_message,), anthropic_request_messages
+            )
+        else:
+            chained_messages = anthropic_request_messages
+
+        for msg_i, msg in enumerate(chained_messages):
             role = (msg.get("role") or "").lower()
             content = msg.get("content")
             msg_id = msg.get("id")
@@ -382,6 +394,28 @@ class LangChainOpenAIRequestAdapter:
                     )
 
         return messages
+
+    @staticmethod
+    def _system_content_has_text(system_content: Any) -> bool:
+        """Determine whether system content still has textual content after filtering."""
+
+        if system_content is None:
+            return False
+
+        if isinstance(system_content, str):
+            return bool(system_content.strip())
+
+        if isinstance(system_content, list):
+            for block in system_content:
+                if isinstance(block, dict):
+                    text_value = block.get("text")
+                    if isinstance(text_value, str) and text_value.strip():
+                        return True
+                elif isinstance(block, str) and block.strip():
+                    return True
+            return False
+
+        return bool(system_content)
 
     def _format_tool_result_content(self, content: Any) -> tuple[str, bool]:
         """Format tool result content and detect if it's an error.

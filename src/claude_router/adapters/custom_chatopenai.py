@@ -114,7 +114,7 @@ class ChatOpenAIWithCustomFields(ChatOpenAI):
 
             generation.message.additional_kwargs.update(custom_fields)
 
-            log.info(
+            log.debug(
                 "Added custom fields to message additional_kwargs",
                 context=context,
                 custom_fields=list(custom_fields.keys()),
