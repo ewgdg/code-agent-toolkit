@@ -1,4 +1,5 @@
 import json
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -325,29 +326,61 @@ def main() -> None:
                 except Exception as e:
                     logger.error(f"Server error: {e}")
 
-            server_thread = threading.Thread(target=run_server, daemon=True)
+            server_thread = threading.Thread(target=run_server)
             server_thread.start()
 
             # Wait for restart signal or shutdown
             server_restart_event.wait()
             server_restart_event.clear()
 
-            if not should_exit.is_set():
-                logger.info("Stopping server for restart")
-
-                # Signal server to shutdown gracefully
+            def stop_server(reason: str) -> bool:
+                """Attempt to stop the running server thread cleanly."""
+                logger.info(reason)
                 server.should_exit = True
-                server_thread.join(timeout=5)
-
-                # Clean up config loader
                 config_loader.stop_hot_reload()
+
+                shutdown_grace_seconds = 10.0
+                shutdown_poll_seconds = 0.5
+                shutdown_deadline = time.monotonic() + shutdown_grace_seconds
+
+                # Wait in short intervals so we can log if shutdown lingers
+                while server_thread.is_alive() and time.monotonic() < shutdown_deadline:
+                    server_thread.join(timeout=shutdown_poll_seconds)
+
+                if server_thread.is_alive():
+                    logger.warning(
+                        "Server shutdown exceeded grace period; forcing exit",
+                        port=port,
+                    )
+                    server.force_exit = True
+                    server_thread.join(timeout=5)
+
+                if server_thread.is_alive():
+                    logger.error(
+                        "Server failed to stop after force exit",
+                        port=port,
+                    )
+                    return False
+
+                logger.info("Server shutdown complete")
+                return True
+
+            if not should_exit.is_set():
+                if not stop_server("Stopping server for restart"):
+                    logger.error(
+                        "Aborting hot reload restart because previous server is still running",
+                        port=port,
+                    )
+                    should_exit.set()
+                    break
 
                 logger.info("Server stopped, restarting...")
             else:
-                logger.info("Shutting down server")
-                server.should_exit = True
-                server_thread.join(timeout=5)
-                config_loader.stop_hot_reload()
+                if not stop_server("Shutting down server"):
+                    logger.error(
+                        "Server shutdown did not complete cleanly",
+                        port=port,
+                    )
                 break
 
         except KeyboardInterrupt:
