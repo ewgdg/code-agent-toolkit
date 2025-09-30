@@ -353,7 +353,7 @@ def main() -> None:
                         port=port,
                     )
                     server.force_exit = True
-                    server_thread.join(timeout=5)
+                    server_thread.join()
 
                 if server_thread.is_alive():
                     logger.error(
