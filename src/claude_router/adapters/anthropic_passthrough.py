@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 import structlog
@@ -106,27 +107,28 @@ class PassthroughAdapter:
             if "messages" in request_data and isinstance(
                 request_data["messages"], list
             ):
-                cleaned_messages = []
+                original_messages = request_data["messages"]
+                total_messages = len(original_messages)
+                cleaned_messages: list[dict[str, Any]] = []
 
-                for message in request_data["messages"]:
-                    content = message["content"]
-                    # Handle list content (filter thinking blocks)
-                    if isinstance(content, list):
-                        cleaned_content = []
-                        for block in content:
-                            if (
-                                isinstance(block, dict)
-                                and block.get("type") == "thinking"
-                            ):
-                                # Only keep thinking blocks with valid signatures
-                                if "signature" in block and block["signature"]:
-                                    cleaned_content.append(block)
-                            else:
-                                cleaned_content.append(block)
+                for original_index, message in enumerate(original_messages):
+                    content = message.get("content")
+                    cleaned_content = self._clean_message_content(content)
 
-                        message["content"] = cleaned_content
+                    if self._is_content_empty(cleaned_content):
+                        if not self._should_keep_empty_message(
+                            message, original_index, total_messages
+                        ):
+                            logger.debug(
+                                "Dropping message with empty content after cleanup",
+                                role=message.get("role"),
+                                index=original_index,
+                            )
+                            continue
 
-                    cleaned_messages.append(message)
+                    cleaned_message = dict(message)
+                    cleaned_message["content"] = cleaned_content
+                    cleaned_messages.append(cleaned_message)
 
                 request_data["messages"] = cleaned_messages
 
@@ -146,6 +148,54 @@ class PassthroughAdapter:
                 error=str(e),
             )
             return body
+
+    def _clean_message_content(self, content: Any) -> Any:
+        """Remove invalid thinking blocks from message content."""
+        if isinstance(content, list):
+            cleaned_content = []
+            for block in content:
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") == "thinking"
+                    and not block.get("signature")
+                ):
+                    continue
+                cleaned_content.append(block)
+            return cleaned_content
+        return content
+
+    def _is_content_empty(self, content: Any) -> bool:
+        """Determine if a message content payload is effectively empty."""
+        if content is None:
+            return True
+        if isinstance(content, str):
+            return not content.strip()
+        if isinstance(content, list):
+            if not content:
+                return True
+            return all(self._is_content_block_empty(block) for block in content)
+        return False
+
+    def _is_content_block_empty(self, block: Any) -> bool:
+        """Check whether a content block lacks user-visible data."""
+        if not isinstance(block, dict):
+            return False
+
+        block_type = block.get("type")
+        if block_type == "text":
+            text = block.get("text")
+            return not isinstance(text, str) or not text.strip()
+        if block_type == "thinking":
+            # Unsigned thinking blocks are filtered earlier; treat signed ones as meaningful
+            return not block.get("signature")
+        return False
+
+    def _should_keep_empty_message(
+        self, message: dict[str, Any], index: int, total_messages: int
+    ) -> bool:
+        """Allow empty content only for the optional final assistant message."""
+        is_last = index == total_messages - 1
+        return is_last and message.get("role") == "assistant"
 
     def _strip_hop_by_hop_headers(self, headers: dict[str, str]) -> dict[str, str]:
         """Strip hop-by-hop headers that should not be forwarded between proxies.
