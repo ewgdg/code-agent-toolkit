@@ -340,12 +340,8 @@ def main() -> None:
                 config_loader.stop_hot_reload()
 
                 shutdown_grace_seconds = 10.0
-                shutdown_poll_seconds = 0.5
-                shutdown_deadline = time.monotonic() + shutdown_grace_seconds
 
-                # Wait in short intervals so we can log if shutdown lingers
-                while server_thread.is_alive() and time.monotonic() < shutdown_deadline:
-                    server_thread.join(timeout=shutdown_poll_seconds)
+                server_thread.join(timeout=shutdown_grace_seconds)
 
                 if server_thread.is_alive():
                     logger.warning(
