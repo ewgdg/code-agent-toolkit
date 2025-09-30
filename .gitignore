@@ -91,3 +91,7 @@ logs/
 .ruff_cache/
 
 tasks
+
+# BMAD (local only)
+.bmad-core/
+.bmad-*/
