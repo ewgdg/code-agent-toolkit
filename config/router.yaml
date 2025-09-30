@@ -13,14 +13,14 @@ providers:
     api_key_env: "OPENAI_API_KEY"
     tools:
       restricted_tool_names:
-        # - WebFetch
+        - WebFetch
         - WebSearch
   llama:
     base_url: "http://127.0.0.1:8080/v1"
     adapter: "openai-compatible"
     tools:
       restricted_tool_names:
-        # - WebFetch
+        - WebFetch
         - WebSearch
 
 # OpenAI configuration
